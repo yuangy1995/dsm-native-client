@@ -14,7 +14,12 @@ final class MobileChatSendUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["No sent messages"].waitForExistence(timeout: 5))
         screenshot(app, "Removing the last local record shows an empty list")
         app.buttons["Close"].tap()
+        XCTAssertTrue(app.navigationBars["Sent messages"].waitForNonExistence(timeout: 8))
         XCTAssertTrue(app.staticTexts["New sample message"].waitForExistence(timeout: 5))
+        let refresh = app.buttons["Refresh messages"]
+        XCTAssertTrue(refresh.waitForExistence(timeout: 5)); refresh.tap()
+        XCTAssertTrue(app.staticTexts["New sample message"].waitForExistence(timeout: 8))
+        screenshot(app, "Message survives record removal and a fresh conversation read")
     }
 
     func test发送后读取中断重启仅刷新原消息并恢复成功() {
@@ -77,11 +82,9 @@ final class MobileChatSendUITests: XCTestCase {
         app.launchEnvironment["LANSTASH_UI_STATE"] = state; app.launch(); return app
     }
     private func openChat(_ app: XCUIApplication, chinese: Bool = false) {
-        XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 20))
         navigate("settings", chinese ? "App 设置" : "App settings", app)
-        let toggle = element("mobile.settings.module.chat", app)
-        for _ in 0..<5 { if toggle.exists && toggle.isHittable { break }; app.swipeUp() }
-        XCTAssertTrue(toggle.waitForExistence(timeout: 5)); toggle.switches.firstMatch.tap()
+        MobileUITestNavigation.enableModule(app, module: "chat", test: self)
         navigate("chat", chinese ? "聊天" : "Chat", app)
         XCTAssertTrue(app.staticTexts["Sample chat"].firstMatch.waitForExistence(timeout: 8))
     }

@@ -270,6 +270,7 @@ private struct MobileNasDiskView: View {
                 }
             } else { Text(MobileNasStorageModel.Failure.changed.message) }
         }
+        .accessibilityIdentifier("mobile.nas.disk.details")
         .navigationTitle(disk?.name ?? L10n.string("mobile.nas.storage.drive"))
         .navigationBarTitleDisplayMode(.inline)
         .fillsAvailableContentArea(alignment: .topLeading)

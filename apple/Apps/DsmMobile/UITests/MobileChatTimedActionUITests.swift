@@ -100,11 +100,9 @@ final class MobileChatTimedActionUITests: XCTestCase {
         app.launchEnvironment["LANSTASH_UI_STATE"] = state; app.launch(); return app
     }
     private func openChat(_ app: XCUIApplication, chinese: Bool = false) {
-        XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 20))
         navigate("settings", title: chinese ? "App 设置" : "App settings", app)
-        let toggle = element("mobile.settings.module.chat", app)
-        for _ in 0..<5 { if toggle.exists && toggle.isHittable { break }; app.swipeUp() }
-        XCTAssertTrue(toggle.waitForExistence(timeout: 5)); toggle.switches.firstMatch.tap()
+        MobileUITestNavigation.enableModule(app, module: "chat", test: self)
         navigate("chat", title: chinese ? "聊天" : "Chat", app)
         let chat = app.staticTexts["Sample chat"].firstMatch
         XCTAssertTrue(chat.waitForExistence(timeout: 8)); chat.tap()

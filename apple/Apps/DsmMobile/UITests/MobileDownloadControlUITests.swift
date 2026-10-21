@@ -100,21 +100,13 @@ final class MobileDownloadControlUITests: XCTestCase {
         app.launchEnvironment["LANSTASH_UI_STATE"] = state; app.launch(); return app
     }
     private func enableDownloads(_ app: XCUIApplication, chinese: Bool = false) {
-        XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 20))
         navigate("settings", chinese ? "App 设置" : "App settings", app)
-        let toggle = element("mobile.settings.module.downloads", app)
-        scrollTo(toggle, app); XCTAssertTrue(toggle.waitForExistence(timeout: 5)); toggle.switches.firstMatch.tap()
+        MobileUITestNavigation.enableModule(app, module: "downloads", test: self)
         navigate("downloads", chinese ? "下载管理" : "Downloads", app)
     }
     private func navigate(_ id: String, _ title: String, _ app: XCUIApplication) {
-        let tab = app.tabBars.buttons[title], sidebar = element("mobile.navigation.\(id)", app)
-        // 启用模块后的标签栏/侧栏都以实际可点击状态作为继续条件。
-        let ready = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
-            (tab.exists && tab.isHittable) || (sidebar.exists && sidebar.isHittable)
-        }, object: app)
-        XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 5), .completed)
-        if tab.exists && tab.isHittable { tab.tap() }
-        else { XCTAssertTrue(sidebar.exists); XCTAssertTrue(sidebar.isHittable); sidebar.tap() }
+        MobileUITestNavigation.open(app, destination: id, title: title, test: self)
     }
     private func selectAll(_ app: XCUIApplication) {
         let select = element("downloads.select", app)

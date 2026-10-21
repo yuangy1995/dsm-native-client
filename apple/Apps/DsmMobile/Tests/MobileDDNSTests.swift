@@ -117,7 +117,8 @@ final class MobileDDNSTests: XCTestCase {
         await model.refresh(); let original = try XCTUnwrap(model.directory.value?.records.first)
         let change = NasDDNSChange.test(original: original, draft: draft(original: "Example", hostname: original.hostname))
         let id = try XCTUnwrap(model.perform(change, activation: model.activation))
-        await wait { !model.recovery.isExecuting(id) }
+        // 写请求结束后仍要等刷新完成，瞬时动作的未知结果才会解除原操作占用。
+        await wait { !model.isOperating }
         XCTAssertEqual(model.recovery.entry(id)?.phase, .unconfirmed)
         XCTAssertTrue(model.canPerform(change))
         await model.refresh()

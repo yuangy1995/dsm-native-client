@@ -63,6 +63,11 @@ actor MobileDirectoryUITransport: DsmHTTPTransport {
             return response([user ? "users" : "groups": user ? users : groups])
         }
         guard ["create", "set", "delete"].contains(method) else { throw URLError(.unsupportedURL) }
+        // 密码界面场景必须把指定合成口令完整送达，不能仅凭两次输入碰巧相同而通过。
+        if mode == "nas-directory-password", user, method == "create",
+           fields["password"] != "synthetic-only" || fields["password_confirm"] != "synthetic-only" {
+            return .init(data: Data(#"{"success":false,"error":{"code":400}}"#.utf8), statusCode: 200)
+        }
         if mode == "nas-directory-denied" { return .init(data: Data(#"{"success":false,"error":{"code":105}}"#.utf8), statusCode: 200) }
         var values = user ? users : groups
         if method == "delete" {

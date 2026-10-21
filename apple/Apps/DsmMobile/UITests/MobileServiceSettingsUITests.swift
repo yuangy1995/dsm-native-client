@@ -61,8 +61,8 @@ final class MobileServiceSettingsUITests: XCTestCase {
         let app = launch("nas-services-hardware-led-denied-once", kind: "hardware"); defer { app.terminate() }
         openEditor(app); increaseBrightness(app)
         app.buttons["mobile.nas.service.save"].tap()
-        XCTAssertFalse(element("mobile.nas.service.confirm", app).exists)
         expect(reveal("mobile.nas.service.editorResult", in: app), contains: "permission")
+        XCTAssertFalse(element("mobile.nas.service.confirm", app).exists)
         element("mobile.nas.service.done", app).tap(); waitEditorClosed(app)
         screenshot(app, "Indicator brightness saved with application refused")
         reveal("mobile.nas.hardware.continueLED", in: app).tap()
@@ -408,11 +408,11 @@ final class MobileServiceSettingsUITests: XCTestCase {
         XCTAssertTrue(app.buttons["mobile.nas.service.save"].isHittable)
         app.buttons["mobile.nas.service.save"].tap(); screenshot(app, "Proxy connection warning")
         element("mobile.nas.service.cancel", app).tap(); app.buttons["mobile.nas.service.save"].tap()
-        element("mobile.nas.service.confirm", app).tap(); waitEditorClosed(app)
+        confirmServiceChanges(app); waitEditorClosed(app)
         expect(reveal("mobile.nas.service.row.proxyHost", in: app), contains: "outbound.example.invalid")
         openEditor(app); toggle("proxyEnabled", in: app)
         XCTAssertFalse(app.textFields["mobile.nas.service.proxyHost"].isEnabled)
-        app.buttons["mobile.nas.service.save"].tap(); element("mobile.nas.service.confirm", app).tap(); waitEditorClosed(app)
+        app.buttons["mobile.nas.service.save"].tap(); confirmServiceChanges(app); waitEditorClosed(app)
         expect(reveal("mobile.nas.service.row.proxyEnabled", in: app), contains: "Off")
         screenshot(app, "Proxy disabled with original address retained")
     }
@@ -662,14 +662,29 @@ final class MobileServiceSettingsUITests: XCTestCase {
         XCTAssertEqual(field.value as? String, text)
     }
     private func finishTextEditing(_ app: XCUIApplication) {
-        let done = element("mobile.nas.service.keyboardDone", app)
+        if app.frame.width > 600, app.popovers.firstMatch.exists {
+            // 数字键盘的弹出层会拦截底部完成按钮，先点击编辑器标题栏空白处收起它。
+            let bar = app.navigationBars.containing(.button, identifier: "mobile.nas.service.save").firstMatch
+            bar.coordinate(withNormalizedOffset: CGVector(dx: 0.25, dy: 0.5)).tap()
+            XCTAssertTrue(app.popovers.firstMatch.waitForNonExistence(timeout: 5))
+        }
+        let done = app.buttons["mobile.nas.service.keyboardDone"]
         if done.exists && done.isHittable { done.tap() }
+    }
+    private func confirmServiceChanges(_ app: XCUIApplication) {
+        // 云端命中了确认按钮的外层 Other，但确认页未关闭；只操作实际按钮且不重发。
+        let confirm = app.buttons["mobile.nas.service.confirm"]
+        let ready = XCTNSPredicateExpectation(predicate: NSPredicate(format: "hittable == true"), object: confirm)
+        XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 10), .completed)
+        XCTAssertTrue(confirm.isEnabled)
+        confirm.press(forDuration: 0.15)
     }
     private func waitEditorClosed(_ app: XCUIApplication, editID: String = "mobile.nas.service.edit") {
         let edit = app.buttons[editID]
-        let result = XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == true AND hittable == true"), object: edit)], timeout: 10)
-        if result != .completed { let attachment = XCTAttachment(string: app.debugDescription); attachment.name = "Service editor result hierarchy"; add(attachment); screenshot(app, "Service editor result") }
-        XCTAssertEqual(result, .completed); XCTAssertFalse(app.collectionViews["mobile.nas.service.editor"].exists)
+        // 原复合谓词超时时列表已恢复；直接等待实际可点击状态，保留原期限和关闭断言。
+        let result = edit.wait(for: \.isHittable, toEqual: true, timeout: 10)
+        if !result { let attachment = XCTAttachment(string: app.debugDescription); attachment.name = "Service editor result hierarchy"; add(attachment); screenshot(app, "Service editor result") }
+        XCTAssertTrue(result); XCTAssertTrue(edit.exists); XCTAssertFalse(app.collectionViews["mobile.nas.service.editor"].exists)
     }
     private func launch(_ state: String, kind: String = "fileServices", preserve: Bool = false, chinese: Bool = false, large: Bool = false) -> XCUIApplication {
         continueAfterFailure = false; XCUIDevice.shared.orientation = .portrait
@@ -678,21 +693,16 @@ final class MobileServiceSettingsUITests: XCTestCase {
         if preserve { app.launchArguments.append("--ui-preserve-transfer-fixture") }
         if large { app.launchArguments += ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityM"] }
         app.launchEnvironment["LANSTASH_UI_STATE"] = state; app.launch()
-        XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 20))
         navigate("settings", title: chinese ? "App 设置" : "App settings", app)
-        reveal("mobile.settings.module.nasSettings", in: app).switches.firstMatch.tap()
+        _ = reveal("mobile.settings.module.nasSettings", in: app)
+        MobileUITestNavigation.enableModule(app, module: "nasSettings", test: self)
         navigate("nasSettings", title: chinese ? "NAS 设置" : "NAS settings", app)
         reveal("mobile.nas.page.\(kind)", in: app).tap()
         return app
     }
     private func navigate(_ destination: String, title: String, _ app: XCUIApplication) {
-        let tab = app.tabBars.buttons[title], sidebar = element("mobile.navigation.\(destination)", app)
-        let ready = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
-            (tab.exists && tab.isHittable) || (sidebar.exists && sidebar.isHittable)
-        }, object: app)
-        XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 5), .completed)
-        if tab.exists && tab.isHittable { tab.tap() }
-        else { XCTAssertTrue(sidebar.exists); XCTAssertTrue(sidebar.isHittable); sidebar.tap() }
+        MobileUITestNavigation.open(app, destination: destination, title: title, test: self)
     }
     private func expect(_ value: XCUIElement, contains text: String) {
         XCTAssertTrue(value.waitForExistence(timeout: 8))
@@ -701,9 +711,13 @@ final class MobileServiceSettingsUITests: XCTestCase {
     private func reveal(_ id: String, in app: XCUIApplication) -> XCUIElement {
         let value = element(id, app)
         for attempt in 0..<14 {
-            let list = app.collectionViews.containing(.any, identifier: id).firstMatch
-            let form = app.collectionViews["mobile.nas.service.editor"]
-            let scroller: XCUIElement = list.exists ? list : (form.exists ? form : app)
+            let forms = ["mobile.nas.power.entryEditor", "mobile.nas.service.confirmation", "mobile.nas.service.editor",
+                         "mobile.nas.service.list", "mobile.nas.navigation", "mobile.settings.page"]
+                .map { app.collectionViews[$0] }
+            // 结果行可能尚未被惰性表单创建；滚动容器不能依赖这行先存在。
+            // 表单内控件禁用后，容器可能不可点击但仍可滚动；按最上层表单的稳定标识选区域。
+            let scroller = forms.first(where: { $0.exists })
+                ?? app
             if value.waitForExistence(timeout: 1), !value.frame.isEmpty {
                 let top = app.navigationBars.allElementsBoundByIndex.filter { $0.isHittable }.map { $0.frame.maxY }.max() ?? app.frame.minY + 110
                 let tab = app.tabBars.firstMatch
@@ -730,7 +744,8 @@ final class MobileServiceSettingsUITests: XCTestCase {
         let end = origin.withOffset(CGVector(dx: center.x - app.frame.minX, dy: center.y - offset - app.frame.minY))
         start.press(forDuration: 0.1, thenDragTo: end, withVelocity: .slow, thenHoldForDuration: 0.2)
     }
-    private func element(_ id: String, _ app: XCUIApplication) -> XCUIElement { app.descendants(matching: .any).matching(identifier: id).firstMatch }
+    // 云端逐属性 firstMatch 查询超过文案等待期限；仍按相同标识取完整匹配的首项。
+    private func element(_ id: String, _ app: XCUIApplication) -> XCUIElement { app.descendants(matching: .any).matching(identifier: id).element(boundBy: 0) }
     private func screenshot(_ app: XCUIApplication, _ title: String) {
         let attachment = XCTAttachment(screenshot: app.screenshot()); attachment.name = title; attachment.lifetime = .keepAlways; add(attachment)
     }

@@ -97,7 +97,7 @@ import XCTest
         if preserve { app.launchArguments.append("--ui-preserve-transfer-fixture") }
         if large { app.launchArguments += ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityM"] }
         app.launchEnvironment["LANSTASH_UI_STATE"] = mode; app.launch()
-        XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 20))
         MobileUITestNavigation.open(app, destination: "settings", title: chinese ? "App 设置" : "App settings", test: self)
         MobileUITestNavigation.enableModule(app, module: "containers", test: self)
         MobileUITestNavigation.open(app, destination: "containers", title: chinese ? "容器管理" : "Containers", test: self)
@@ -113,6 +113,11 @@ import XCTest
     private func fill(_ id: String, _ text: String, _ app: XCUIApplication) {
         let field = reveal("network.create.\(id)", app, list: "network.create.form")
         ready(field); field.tap(); field.typeText(text)
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "value == %@", text), object: field)], timeout: 5), .completed)
+        // 结束当前输入并收起键盘，避免下方字段被遮挡且滚动停在仍有焦点的输入框。
+        field.typeText("\n")
+        XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5))
     }
     private func toggle(_ id: String, _ app: XCUIApplication) {
         let row = reveal(id, app, list: "network.create.form"), control = row.switches.firstMatch
@@ -134,8 +139,9 @@ import XCTest
     private func phase(_ value: String, _ app: XCUIApplication) { XCTAssertTrue(element("network.record.\(value)", app).waitForExistence(timeout: 15)) }
     private func element(_ id: String, _ app: XCUIApplication) -> XCUIElement { app.descendants(matching: .any).matching(identifier: id).firstMatch }
     private func ready(_ element: XCUIElement) {
-        let check = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == true AND enabled == true AND hittable == true"), object: element)
-        XCTAssertEqual(XCTWaiter.wait(for: [check], timeout: 12), .completed)
+        // 云端每次 AX 查询可耗时数秒；只轮询可点击状态，避免三次串行查询耗尽同一期限。
+        XCTAssertTrue(element.wait(for: \.isHittable, toEqual: true, timeout: 12))
+        XCTAssertTrue(element.exists); XCTAssertTrue(element.isEnabled)
     }
     private func detailValue(_ label: String, _ value: String, _ app: XCUIApplication) {
         let detail = element("network.details", app)

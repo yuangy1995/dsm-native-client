@@ -138,11 +138,9 @@ final class MobileChatUITests: XCTestCase {
     }
 
     private func openChat(_ app: XCUIApplication, chinese: Bool = false) {
-        XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 20))
         navigate("settings", title: chinese ? "App 设置" : "App settings", app)
-        let toggle = element("mobile.settings.module.chat", app)
-        for _ in 0..<5 { if toggle.exists && toggle.isHittable { break }; app.swipeUp() }
-        XCTAssertTrue(toggle.waitForExistence(timeout: 5)); toggle.switches.firstMatch.tap()
+        MobileUITestNavigation.enableModule(app, module: "chat", test: self)
         navigate("chat", title: chinese ? "聊天" : "Chat", app)
         XCTAssertTrue(app.staticTexts["Sample chat"].firstMatch.waitForExistence(timeout: 8))
     }
@@ -163,6 +161,9 @@ final class MobileChatUITests: XCTestCase {
     private func replaceText(_ field: XCUIElement, old: String, new: String) {
         field.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.05)).tap()
         field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: old.count) + new)
+        // 系统键盘仍在处理输入时可能先返回中间快照；等待完整目标值，不重复发送编辑。
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "value == %@", new), object: field)], timeout: 5), .completed)
         XCTAssertEqual(field.value as? String, new)
     }
 

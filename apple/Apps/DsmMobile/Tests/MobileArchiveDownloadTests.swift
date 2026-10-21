@@ -7,13 +7,14 @@ import XCTest
 private actor ArchiveDownloadTransport: DsmBinaryHTTPTransport {
     let items: [FileItem]
     var failOnce: Bool
-    let delayed: Bool
+    private var holdsDownloads: Bool
+    private var completions: [CheckedContinuation<Void, Never>] = []
     private(set) var paths: [[String]] = []
     private(set) var reads: [[String]] = []
     private(set) var ranged = false
 
-    init(items: [FileItem], failOnce: Bool = false, delayed: Bool = false) {
-        self.items = items; self.failOnce = failOnce; self.delayed = delayed
+    init(items: [FileItem], failOnce: Bool = false, holdsDownloads: Bool = false) {
+        self.items = items; self.failOnce = failOnce; self.holdsDownloads = holdsDownloads
     }
     func send(_ request: URLRequest) async throws -> DsmHTTPResponse {
         let body = request.httpBody.flatMap { String(data: $0, encoding: .utf8) } ?? request.url?.query ?? ""
@@ -35,11 +36,9 @@ private actor ArchiveDownloadTransport: DsmBinaryHTTPTransport {
         let value = fields.first { $0.name == "path" }?.value ?? ""
         paths.append(try JSONDecoder().decode([String].self, from: Data(value.utf8)))
         ranged = ranged || request.value(forHTTPHeaderField: "Range") != nil
-        if delayed {
-            // 模拟请求已发出，完成回调晚于切换账号或取消。
-            await withCheckedContinuation { continuation in
-                Task { try? await Task.sleep(for: .milliseconds(160)); continuation.resume() }
-            }
+        if holdsDownloads {
+            // 由测试在取消或重复提交检查后放行，确保回调时序不依赖机器速度。
+            await withCheckedContinuation { completions.append($0) }
         }
         if failOnce { failOnce = false; throw URLError(.networkConnectionLost) }
         let data = Data([0x50, 0x4b, 0x05, 0x06] + Array(repeating: UInt8(0), count: 18))
@@ -48,6 +47,12 @@ private actor ArchiveDownloadTransport: DsmBinaryHTTPTransport {
     }
     func upload(_ request: URLRequest, from url: URL, progress: @escaping FileTransferProgress) async throws -> DsmHTTPResponse {
         throw URLError(.unsupportedURL)
+    }
+    func finishDownloads() {
+        holdsDownloads = false
+        let pending = completions
+        completions.removeAll()
+        pending.forEach { $0.resume() }
     }
 }
 
@@ -209,7 +214,8 @@ final class MobileArchiveDownloadTests: XCTestCase {
         await coordinator.activateContext(f.identity)
         let controller = MobileDocumentTransferController(transferCoordinator: coordinator, recoveryStore: f.store)
         controller.setActiveProfile(f.profile.id)
-        let context = f.context(controller), transport = ArchiveDownloadTransport(items: f.items, delayed: true)
+        let context = f.context(controller), transport = ArchiveDownloadTransport(items: f.items, holdsDownloads: true)
+        addTeardownBlock { await transport.finishDownloads() }
         let service = try f.service(transport)
         let value = await controller.startDownload(context: context, service: service)
         let id = try XCTUnwrap(value)
@@ -217,6 +223,8 @@ final class MobileArchiveDownloadTests: XCTestCase {
         controller.resetForDisconnectedWorkspace(); controller.setActiveProfile(UUID())
         let stale = await controller.startDownload(context: context, service: service)
         XCTAssertNil(stale)
+        try await wait { await coordinator.task(id: id)?.status == .cancelling }
+        await transport.finishDownloads()
         try await wait { await coordinator.task(id: id)?.status == .cancelled }
         let request = await coordinator.request(id: id)
         XCTAssertFalse(FileManager.default.fileExists(atPath: try XCTUnwrap(request).localURL.path))
@@ -228,7 +236,8 @@ final class MobileArchiveDownloadTests: XCTestCase {
         let f = try Fixture(); defer { f.cleanup() }
         let coordinator = MobileTransferCoordinator(recoveryStore: f.store)
         await coordinator.activateContext(f.identity)
-        let transport = ArchiveDownloadTransport(items: f.items, delayed: true), service = try f.service(transport)
+        let transport = ArchiveDownloadTransport(items: f.items, holdsDownloads: true), service = try f.service(transport)
+        addTeardownBlock { await transport.finishDownloads() }
         let first = await coordinator.enqueueDownload(f.request)
         await coordinator.start(first, using: service)
         try await wait { !(await transport.paths).isEmpty }
@@ -239,6 +248,7 @@ final class MobileArchiveDownloadTests: XCTestCase {
         let duplicate = await coordinator.enqueueDownload(second)
         await coordinator.start(duplicate, using: service)
         try await wait { await coordinator.task(id: duplicate)?.status == .cancelledBeforeSubmission }
+        await transport.finishDownloads()
         try await wait { await coordinator.task(id: first)?.status == .succeeded }
         let paths = await transport.paths; XCTAssertEqual(paths.count, 1)
     }
@@ -316,8 +326,8 @@ final class MobileArchiveDownloadTests: XCTestCase {
                 request: .download(request))
         }
     }
-    private func wait(_ predicate: () async -> Bool) async throws {
+    private func wait(file: StaticString = #filePath, line: UInt = #line, _ predicate: () async -> Bool) async throws {
         for _ in 0..<200 { if await predicate() { return }; try await Task.sleep(for: .milliseconds(10)) }
-        XCTFail("下载状态未结束")
+        XCTFail("下载状态未结束", file: file, line: line)
     }
 }

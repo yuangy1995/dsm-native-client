@@ -42,7 +42,8 @@ final class MobileShareExtensionUITests: XCTestCase {
         XCTAssertTrue(app.buttons["Resume"].waitForExistence(timeout: 10))
         XCTAssertTrue(app.staticTexts["Paused"].exists)
         screenshot(app, "share-interrupted-restored-paused")
-        app.buttons["Resume"].tap()
+        // 云端触摸日志记录短点击被丢弃；仅按下并抬起一次，仍须上传实际完成。
+        app.buttons["Resume"].press(forDuration: 0.15)
         XCTAssertTrue(app.buttons["Clear Finished Uploads"].waitForExistence(timeout: 35))
         screenshot(app, "share-resumed-completed")
     }
@@ -115,13 +116,16 @@ final class MobileShareExtensionUITests: XCTestCase {
         XCTAssertTrue(start.waitForExistence(timeout: 10))
         XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate(format: "enabled == true"), object: start)], timeout: 10), .completed)
         start.tap()
+        // 云端首次呈现曾只有遮罩；先等系统面板真正出现，再查询其中的分享入口。
+        XCTAssertTrue(element("ActivityListView", app).waitForExistence(timeout: 20), app.debugDescription)
         let activity = app.cells.matching(NSPredicate(format: "label IN %@", ["LanStash", "岚仓"])).firstMatch
         if !activity.waitForExistence(timeout: 5) {
             let more = app.cells.matching(NSPredicate(format: "label IN %@", ["More", "更多"])).firstMatch
             XCTAssertTrue(more.waitForExistence(timeout: 5)); more.tap()
         }
         XCTAssertTrue(activity.waitForExistence(timeout: 8)); activity.tap()
-        XCTAssertTrue(element("mobile.share.selection", app).waitForExistence(timeout: 15))
+        // 云端首次启动到读取分享文件曾超过 23 秒；先等扩展界面，再按原期限验证目录和上传。
+        XCTAssertTrue(element("mobile.share.selection", app).waitForExistence(timeout: 45))
         XCTAssertTrue(element("mobile.share.folder./Shared", app).waitForExistence(timeout: 10))
     }
 

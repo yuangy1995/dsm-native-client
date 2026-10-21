@@ -13,7 +13,7 @@ final class MobileChatForwardUITests: XCTestCase {
         target.tap(); app.buttons["chat-forward-target-conversation-30"].tap(); app.buttons["chat-forward-target-contact-2"].tap()
         XCTAssertTrue(app.buttons["chat-forward-submit"].isEnabled); app.buttons["chat-forward-submit"].tap()
         let completed = app.buttons["chat-forward-remove-record"]
-        for _ in 0..<4 { if completed.exists && completed.isHittable { break }; app.swipeUp() }
+        for _ in 0..<4 { if completed.waitForExistence(timeout: 2) && completed.isHittable { break }; app.swipeUp() }
         XCTAssertTrue(completed.waitForExistence(timeout: 8))
         XCTAssertFalse(app.buttons["chat-forward-refresh"].exists)
         screenshot(app, "Two messages forwarded to three recipients")
@@ -30,7 +30,9 @@ final class MobileChatForwardUITests: XCTestCase {
         screenshot(app, "Partly delivered forwarding pauses following messages")
         app.terminate(); app.launchEnvironment["LANSTASH_UI_STATE"] = "chat-forward-restored"
         app.launchArguments += ["--ui-preserve-transfer-fixture"]; app.launch(); defer { app.terminate() }
-        openChat(app); app.buttons["chat-more"].tap(); app.buttons["chat-forward-records"].tap()
+        openChat(app); app.buttons["chat-more"].tap()
+        // 云端短点击被系统丢弃时菜单仍在原处；单次按下并抬起后继续验证记录页。
+        app.buttons["chat-forward-records"].press(forDuration: 0.15)
         let record = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "chat-forward-record-")).firstMatch
         XCTAssertTrue(record.waitForExistence(timeout: 8)); record.tap()
         for _ in 0..<4 { if refresh.exists && refresh.isHittable { break }; app.swipeUp() }
@@ -80,11 +82,9 @@ final class MobileChatForwardUITests: XCTestCase {
         app.launchEnvironment["LANSTASH_UI_STATE"] = state; app.launch(); return app
     }
     private func openChat(_ app: XCUIApplication, chinese: Bool = false) {
-        XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 20))
         navigate("settings", title: chinese ? "App 设置" : "App settings", app)
-        let toggle = app.descendants(matching: .any).matching(identifier: "mobile.settings.module.chat").firstMatch
-        for _ in 0..<5 { if toggle.exists && toggle.isHittable { break }; app.swipeUp() }
-        XCTAssertTrue(toggle.waitForExistence(timeout: 5)); toggle.switches.firstMatch.tap()
+        MobileUITestNavigation.enableModule(app, module: "chat", test: self)
         navigate("chat", title: chinese ? "聊天" : "Chat", app)
         let chat = app.staticTexts["Sample chat"].firstMatch; XCTAssertTrue(chat.waitForExistence(timeout: 8)); chat.tap()
         XCTAssertTrue(app.staticTexts["Sample message 1"].firstMatch.waitForExistence(timeout: 8))

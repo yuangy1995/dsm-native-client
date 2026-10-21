@@ -567,6 +567,7 @@ private struct MobileChatConversationCreatorSheet: View {
                 }
             }
         }
+        .accessibilityIdentifier("chat-create-form")
         .onChange(of: mode) { _, _ in
             guard !creator.requiresReview else { return }
             selectedUserIDs.removeAll()

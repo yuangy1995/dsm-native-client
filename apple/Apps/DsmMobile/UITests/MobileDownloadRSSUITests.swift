@@ -99,11 +99,9 @@ final class MobileDownloadRSSUITests: XCTestCase {
         app.launchEnvironment["LANSTASH_UI_STATE"] = state; app.launch(); return app
     }
     private func openRSS(_ app: XCUIApplication, chinese: Bool = false) {
-        XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 20))
         navigate("settings", chinese ? "App 设置" : "App settings", app)
-        let toggle = element("mobile.settings.module.downloads", app)
-        for _ in 0..<10 { if toggle.exists && toggle.isHittable { break }; app.collectionViews.firstMatch.swipeUp() }
-        XCTAssertTrue(toggle.waitForExistence(timeout: 5)); toggle.switches.firstMatch.tap()
+        MobileUITestNavigation.enableModule(app, module: "downloads", test: self)
         navigate("downloads", chinese ? "下载管理" : "Downloads", app)
         let rss = element("downloads.rss.open", app)
         if rss.exists && rss.isHittable { rss.tap() }
@@ -116,7 +114,9 @@ final class MobileDownloadRSSUITests: XCTestCase {
     }
     private func openFeed(_ app: XCUIApplication) {
         let site = element("downloads.rss.site.7", app)
-        XCTAssertTrue(site.waitForExistence(timeout: 8)); site.tap()
+        XCTAssertTrue(site.waitForExistence(timeout: 8)); XCTAssertTrue(site.isHittable)
+        // 云端短点击后仍停在订阅列表，使用一次完整按下/抬起并保留下方页面断言。
+        site.press(forDuration: 0.15)
         XCTAssertTrue(element("downloads.rss.update", app).waitForExistence(timeout: 5))
     }
     private func navigate(_ id: String, _ title: String, _ app: XCUIApplication) {

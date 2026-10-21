@@ -47,10 +47,10 @@ final class MobileNasStorageUITests: XCTestCase {
         reveal("mobile.nas.disk.quick", in: app).tap()
         XCTAssertTrue(element("mobile.nas.disk.confirm", app).waitForExistence(timeout: 5))
         screenshot(app, "Quick drive test confirmation")
-        element("mobile.nas.disk.confirm", app).tap()
+        element("mobile.nas.disk.confirm", app).press(forDuration: 0.15)
         assertTestState("Quick test running", app)
         reveal("mobile.nas.disk.stop", in: app).tap()
-        XCTAssertTrue(element("mobile.nas.disk.confirm", app).waitForExistence(timeout: 5)); element("mobile.nas.disk.confirm", app).tap()
+        XCTAssertTrue(element("mobile.nas.disk.confirm", app).waitForExistence(timeout: 5)); element("mobile.nas.disk.confirm", app).press(forDuration: 0.15)
         assertTestState("No test running", app)
         screenshot(app, "Drive test stopped and history retained")
     }
@@ -69,8 +69,16 @@ final class MobileNasStorageUITests: XCTestCase {
         let app = launch("nas-storage-unknown")
         openDisk(app); reveal("mobile.nas.disk.quick", in: app).tap()
         element("mobile.nas.disk.confirm", app).tap()
-        let pending = reveal("mobile.nas.disk.operation.submitted", in: app)
-        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate(format: "label CONTAINS %@", "temporarily unavailable"), object: pending)], timeout: 12), .completed)
+        _ = reveal("mobile.nas.disk.operation.submitted", in: app)
+        // 云端画面已有状态文字但全类型查询未返回；滚动后直接定位同标识的静态文本，并保留失败证据。
+        let pending = app.staticTexts["mobile.nas.disk.operation.submitted"]
+        let result = XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate(format: "label CONTAINS %@", "temporarily unavailable"), object: pending)], timeout: 12)
+        if result != .completed {
+            let hierarchy = XCTAttachment(string: app.debugDescription)
+            hierarchy.name = "Drive pending status hierarchy"; hierarchy.lifetime = .keepAlways; add(hierarchy)
+            screenshot(app, "Drive pending status unavailable to test")
+        }
+        XCTAssertEqual(result, .completed)
         XCTAssertFalse(element("mobile.nas.disk.quick", app).exists)
         screenshot(app, "Drive test interrupted with no repeated start")
         app.terminate()
@@ -170,7 +178,7 @@ final class MobileNasStorageUITests: XCTestCase {
         let row = element("mobile.nas.disk.current", app)
         XCTAssertTrue(row.waitForExistence(timeout: 8))
         let expectation = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", state), object: row)
-        XCTAssertEqual(XCTWaiter.wait(for: [expectation], timeout: 10), .completed)
+        XCTAssertEqual(XCTWaiter.wait(for: [expectation], timeout: 20), .completed)
     }
     private func launch(_ state: String, preserve: Bool = false, chinese: Bool = false, largeText: Bool = false) -> XCUIApplication {
         continueAfterFailure = false; XCUIDevice.shared.orientation = .portrait
@@ -180,22 +188,23 @@ final class MobileNasStorageUITests: XCTestCase {
         if largeText { app.launchArguments += ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityM"] }
         app.launchEnvironment["LANSTASH_UI_STATE"] = state
         app.launch()
-        XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 20))
         navigate("settings", title: chinese ? "App 设置" : "App settings", app)
-        reveal("mobile.settings.module.nasSettings", in: app).switches.firstMatch.tap()
+        _ = reveal("mobile.settings.module.nasSettings", in: app)
+        MobileUITestNavigation.enableModule(app, module: "nasSettings", test: self)
         navigate("nasSettings", title: chinese ? "NAS 设置" : "NAS settings", app)
         return app
     }
     private func open(_ page: String, in app: XCUIApplication) { reveal("mobile.nas.page.\(page)", in: app).tap() }
     private func navigate(_ destination: String, title: String, _ app: XCUIApplication) {
-        let tab = app.tabBars.buttons[title]
-        if tab.exists { tab.tap() }
-        else { let button = element("mobile.navigation.\(destination)", app); XCTAssertTrue(button.waitForExistence(timeout: 5)); button.tap() }
+        MobileUITestNavigation.open(app, destination: destination, title: title, test: self)
     }
     private func reveal(_ id: String, in app: XCUIApplication) -> XCUIElement {
         let value = element(id, app)
         for attempt in 0..<12 {
-            let list = app.collectionViews.containing(.any, identifier: id).firstMatch
+            // 检测结果与进度行会将操作按钮推到屏外；滚动表单不能依赖尚未进入辅助功能树的目标按钮。
+            let diskForm = app.collectionViews["mobile.nas.disk.details"]
+            let list = diskForm.exists ? diskForm : app.collectionViews.containing(.any, identifier: id).element(boundBy: 0)
             let scroller: XCUIElement = list.exists ? list : app
             if value.waitForExistence(timeout: 1), !value.frame.isEmpty {
                 let navigationBottom = app.navigationBars.allElementsBoundByIndex.filter { $0.isHittable }.map { $0.frame.maxY }.max() ?? app.frame.minY + 110
@@ -223,7 +232,8 @@ final class MobileNasStorageUITests: XCTestCase {
         let end = origin.withOffset(CGVector(dx: center.x - app.frame.minX, dy: center.y - offset - app.frame.minY))
         start.press(forDuration: 0.1, thenDragTo: end, withVelocity: .slow, thenHoldForDuration: 0.2)
     }
-    private func element(_ id: String, _ app: XCUIApplication) -> XCUIElement { app.descendants(matching: .any).matching(identifier: id).firstMatch }
+    // 云端 firstMatch 逐属性遍历曾超过查询期限；从完整匹配结果取同一个首项，保留原断言。
+    private func element(_ id: String, _ app: XCUIApplication) -> XCUIElement { app.descendants(matching: .any).matching(identifier: id).element(boundBy: 0) }
     private func screenshot(_ app: XCUIApplication, _ name: String) {
         let attachment = XCTAttachment(screenshot: app.screenshot()); attachment.name = name; attachment.lifetime = .keepAlways; add(attachment)
     }

@@ -28,3 +28,7 @@ xcodebuild test -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMob
 通用无签名构建只证明编译；实际模拟器测试使用正常临时签名，分别选择 iPhone 和 iPad。按改动使用 `-only-testing` 聚焦，失败退出不得吞掉。仅 Debug 的 `--ui-fixture` 使用隔离偏好和合成网络；Release 不包含这些入口。共享修改另运行 `swift test --package-path apple` 和 Mac 回归。
 
 正式 App/Share/Files 的团队与移动 App Group、共享会话权限须一致，见[签名配置](../../../docs/releases/MACOS_GITHUB_RELEASE_ZH.md)。已知源码问题、完整云端复验及真机/真实 NAS 条件见[限制清单](../../../docs/progress/KNOWN_LIMITATIONS.md)；模拟器通过不表示系统文件、后台调度或正式分发完成。
+
+Files 系统用例在 CI 中逐个执行，每例按当前选定的设备型号与系统运行时新建模拟器并安装测试 App，不继承其他设备的系统选择器缓存、禁用状态或 Spotlight 索引数据库。用例仍须在原期限内自行完成域清理；独立结果封存后回收该设备。任一失败都会使整组失败，分享、后台和其余模块回归仍继续执行。
+
+[启动诊断](../../../tools/release/capture_apple_ui_hangs.py)在建立自动化会话时预取指定模拟器的测试 App 路径，主线程空闲超时时只采样该精确路径下、带显式合成参数的进程。路径查询超时可保留已核对结果；拒绝或无效结果会清除缓存，不按进程名推测目标。诊断异步执行，不延长测试期限或改写失败结果。

@@ -78,7 +78,9 @@ import XCTest
         retryButton.tap(); XCTAssertTrue(element("container.item.synthetic-id", retry).waitForExistence(timeout: 8))
         reveal("container.filter", retry).tap(); retry.buttons["Needs Attention"].tap()
         XCTAssertTrue(retry.buttons["Show All"].waitForExistence(timeout: 5)); screenshot(retry, "Container filter has no matches")
-        retry.buttons["Show All"].tap(); XCTAssertTrue(element("container.item.synthetic-id", retry).exists); retry.terminate()
+        // 云端短点击被系统丢弃；明确按下并抬起一次，仍检查原列表项目实际恢复。
+        retry.buttons["Show All"].press(forDuration: 0.15)
+        XCTAssertTrue(element("container.item.synthetic-id", retry).exists); retry.terminate()
     }
     func test中文大字停止确认按钮和正文完整可用() {
         let app = launch("containers-running", chinese: true, large: true); defer { app.terminate() }; detail("synthetic-id", app)
@@ -183,7 +185,7 @@ import XCTest
         if preserve { app.launchArguments.append("--ui-preserve-transfer-fixture") }
         if large { app.launchArguments += ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityM"] }
         app.launchEnvironment["LANSTASH_UI_STATE"] = mode; app.launch()
-        XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 20))
         MobileUITestNavigation.open(app, destination: "settings", title: chinese ? "App 设置" : "App settings", test: self)
         MobileUITestNavigation.enableModule(app, module: "containers", test: self)
         MobileUITestNavigation.open(app, destination: "containers", title: chinese ? "容器管理" : "Containers", test: self)

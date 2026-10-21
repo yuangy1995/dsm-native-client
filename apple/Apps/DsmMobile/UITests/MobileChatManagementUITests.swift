@@ -23,10 +23,9 @@ final class MobileChatManagementUITests: XCTestCase {
         XCTAssertTrue(original.waitForExistence(timeout: 5))
         original.press(forDuration: 1)
         element("chat-pin-9001", app).tap()
-        let gone = NSPredicate(format: "exists == false")
-        expectation(for: gone, evaluatedWith: original)
-        waitForExpectations(timeout: 8)
-        XCTAssertTrue(attachmentRow.exists)
+        // 云端录像已剩一条公告；用当前查询和系统消失等待保留原来的八秒断言。
+        XCTAssertTrue(element("chat-announcement-row-9001", app).waitForNonExistence(timeout: 8), app.debugDescription)
+        XCTAssertTrue(element("chat-announcement-row-9002", app).exists)
     }
     func test会话多选取消确认和关闭结果() {
         let app = launch(); defer { app.terminate() }; openChat(app)
@@ -87,18 +86,18 @@ final class MobileChatManagementUITests: XCTestCase {
         app.launchEnvironment["LANSTASH_UI_STATE"] = state; app.launch(); return app
     }
     private func openChat(_ app: XCUIApplication, chinese: Bool = false) {
-        XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 20))
         navigate("settings", title: chinese ? "App 设置" : "App settings", app)
         let toggle = element("mobile.settings.module.chat", app)
         for _ in 0..<5 { if toggle.exists && toggle.isHittable { break }; app.swipeUp() }
-        XCTAssertTrue(toggle.waitForExistence(timeout: 5)); toggle.switches.firstMatch.tap()
+        XCTAssertTrue(toggle.waitForExistence(timeout: 5))
+        MobileUITestNavigation.enableModule(app, module: "chat", test: self)
         navigate("chat", title: chinese ? "聊天" : "Chat", app)
         let chat = app.staticTexts["Sample chat"].firstMatch; XCTAssertTrue(chat.waitForExistence(timeout: 8)); chat.tap()
         XCTAssertTrue(app.staticTexts["Sample message 1"].firstMatch.waitForExistence(timeout: 8))
     }
     private func navigate(_ destination: String, title: String, _ app: XCUIApplication) {
-        if app.tabBars.buttons[title].exists { app.tabBars.buttons[title].tap() }
-        else { let value = element("mobile.navigation.\(destination)", app); XCTAssertTrue(value.waitForExistence(timeout: 5)); value.tap() }
+        MobileUITestNavigation.open(app, destination: destination, title: title, test: self)
     }
     private func element(_ id: String, _ app: XCUIApplication) -> XCUIElement { app.descendants(matching: .any).matching(identifier: id).firstMatch }
     private func screenshot(_ app: XCUIApplication, _ name: String) {

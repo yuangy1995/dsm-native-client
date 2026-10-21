@@ -685,7 +685,10 @@ actor MobilePhotosUIService: SynologyPhotosServing {
     func addableAlbums(offset: Int, limit: Int) async throws -> [SynologyPhotoCollection] {
         if state == "photo-albums-empty" { return [] }
         if state == "photo-albums-error" { throw URLError(.notConnectedToInternet) }
-        if state == "photo-albums-loading" { try await Task.sleep(for: .seconds(30)) }
+        if state == "photo-albums-loading" {
+            // 加载场景保持同一次读取，直到调用方取消；不让云端界面查询耗时结束合成加载态。
+            while true { try await Task.sleep(for: .seconds(30)) }
+        }
         return Array(albumList.dropFirst(offset).prefix(limit))
     }
     func albumSort(id: Int) async throws -> SynologyPhotoSort { .init() }

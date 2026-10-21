@@ -39,6 +39,7 @@ struct MobileChatGroupCreationProgressView: View {
                 creator.startAnotherConversation(); onStartAnother()
             }.frame(minHeight: 44).accessibilityIdentifier("chat-group-another")
         }
+        .accessibilityIdentifier("chat-create-form")
     }
 
     private func step(_ title: String, stage: ChatGroupCreateReceipt.Stage, completed: String, id: String) -> some View {

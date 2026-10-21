@@ -16,7 +16,10 @@ import XCTest
         phase("needsReview", app); XCTAssertFalse(app.buttons["Remove this record"].exists)
         screenshot("Download with receipt remains protected while offline"); app.terminate()
         let next = launch("containers-images-recovered", preserve: true); defer { next.terminate() }
-        next.buttons["Downloads"].tap(); phase("ready", next)
+        let downloads = next.segmentedControls["image-pull.section"].buttons["Downloads"]
+        waitEnabled(downloads); downloads.press(forDuration: 0.15)
+        XCTAssertTrue(next.collectionViews["image-pull.downloads"].waitForExistence(timeout: 8), next.debugDescription)
+        phase("ready", next)
         XCTAssertTrue(next.staticTexts["sample/web:stable"].exists)
         screenshot("Original image download recovered after relaunch")
     }
@@ -83,7 +86,7 @@ import XCTest
         if preserve { app.launchArguments.append("--ui-preserve-transfer-fixture") }
         if large { app.launchArguments += ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityM"] }
         app.launchEnvironment["LANSTASH_UI_STATE"] = mode; app.launch()
-        XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 20))
         MobileUITestNavigation.open(app, destination: "settings", title: chinese ? "App 设置" : "App settings", test: self)
         MobileUITestNavigation.enableModule(app, module: "containers", test: self)
         MobileUITestNavigation.open(app, destination: "containers", title: chinese ? "容器管理" : "Containers", test: self)

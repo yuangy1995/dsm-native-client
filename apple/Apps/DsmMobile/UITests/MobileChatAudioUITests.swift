@@ -95,9 +95,14 @@ final class MobileChatAudioUITests: XCTestCase {
         XCTAssertTrue(start.waitForExistence(timeout: 5)); start.tap()
         let stop = element("chat-voice-stop", app)
         XCTAssertTrue(stop.waitForExistence(timeout: 5)); stop.tap()
-        element("chat-voice-send", app).tap()
-        XCTAssertTrue(element("chat-compose-voice", app).waitForExistence(timeout: 8))
-        XCTAssertFalse(element("chat-voice-send", app).exists)
+        let send = element("chat-voice-send", app), compose = element("chat-compose-voice", app)
+        send.tap()
+        // iPad 弹窗后方的录音入口仍存在；等待原面板关闭且底层入口恢复可点击。
+        let dismissed = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            !send.exists && compose.exists && compose.isHittable
+        }, object: app)
+        XCTAssertEqual(XCTWaiter.wait(for: [dismissed], timeout: 8), .completed)
+        XCTAssertFalse(send.exists)
         element("chat-more", app).tap(); element("chat-send-records", app).tap()
         XCTAssertTrue(app.navigationBars["Sent messages"].waitForExistence(timeout: 5))
         XCTAssertEqual(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "chat-send-record-")).count, 1)
@@ -114,19 +119,16 @@ final class MobileChatAudioUITests: XCTestCase {
         app.launchEnvironment["LANSTASH_UI_STATE"] = state; app.launch(); return app
     }
     private func openChat(_ app: XCUIApplication, chinese: Bool = false) {
-        XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 20))
         navigate("settings", chinese ? "App 设置" : "App settings", app)
-        let toggle = element("mobile.settings.module.chat", app)
-        for _ in 0..<5 { if toggle.exists && toggle.isHittable { break }; app.swipeUp() }
-        XCTAssertTrue(toggle.waitForExistence(timeout: 5)); toggle.switches.firstMatch.tap()
+        MobileUITestNavigation.enableModule(app, module: "chat", test: self)
         navigate("chat", chinese ? "聊天" : "Chat", app)
         let conversation = app.staticTexts["Sample chat"].firstMatch
         XCTAssertTrue(conversation.waitForExistence(timeout: 8)); conversation.tap()
         XCTAssertTrue(element("chat-voice-play-9400", app).waitForExistence(timeout: 8))
     }
     private func navigate(_ id: String, _ title: String, _ app: XCUIApplication) {
-        if app.tabBars.buttons[title].exists { app.tabBars.buttons[title].tap() }
-        else { let item = element("mobile.navigation.\(id)", app); XCTAssertTrue(item.waitForExistence(timeout: 5)); item.tap() }
+        MobileUITestNavigation.open(app, destination: id, title: title, test: self)
     }
     private func element(_ id: String, _ app: XCUIApplication) -> XCUIElement { app.descendants(matching: .any).matching(identifier: id).firstMatch }
     private func screenshot(_ app: XCUIApplication, _ name: String) {

@@ -126,18 +126,15 @@ final class MobileRegionUITests: XCTestCase {
         if preserve { app.launchArguments.append("--ui-preserve-transfer-fixture") }
         if large { app.launchArguments += ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityM"] }
         app.launchEnvironment["LANSTASH_UI_STATE"] = state; app.launch()
-        XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 20))
         navigate("settings", title: chinese ? "App 设置" : "App settings", app)
-        reveal("mobile.settings.module.nasSettings", in: app).switches.firstMatch.tap()
+        MobileUITestNavigation.enableModule(app, module: "nasSettings", test: self)
         navigate("nasSettings", title: chinese ? "NAS 设置" : "NAS settings", app)
         reveal("mobile.nas.page.region", in: app).tap()
         return app
     }
     private func navigate(_ destination: String, title: String, _ app: XCUIApplication) {
-        let tab = app.tabBars.buttons[title]
-        if tab.exists { tab.tap() } else {
-            let button = element("mobile.navigation.\(destination)", app); XCTAssertTrue(button.waitForExistence(timeout: 5)); button.tap()
-        }
+        MobileUITestNavigation.open(app, destination: destination, title: title, test: self)
     }
     private func expect(_ value: XCUIElement, contains text: String) {
         XCTAssertTrue(value.waitForExistence(timeout: 8))

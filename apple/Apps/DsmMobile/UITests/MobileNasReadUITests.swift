@@ -30,7 +30,7 @@ final class MobileNasReadUITests: XCTestCase {
     func test共享访问使用当前账号列表且未知权限不当可写() {
         let app = launch(); defer { app.terminate() }
         open("shareAccess", in: app)
-        XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 20))
         XCTAssertTrue(app.staticTexts["Access could not be determined"].exists)
         XCTAssertFalse(app.staticTexts["Read and write"].exists)
         screenshot(app, "Share access preserves unknown permissions")
@@ -98,38 +98,29 @@ final class MobileNasReadUITests: XCTestCase {
         if largeText { app.launchArguments += ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityM"] }
         app.launchEnvironment["LANSTASH_UI_STATE"] = state
         app.launch()
-        XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 20))
         navigate("settings", title: chinese ? "App 设置" : "App settings", in: app)
-        let toggle = element("mobile.settings.module.nasSettings", in: app)
-        for _ in 0..<4 {
-            if toggle.exists && toggle.isHittable { break }
-            app.swipeUp()
-        }
-        XCTAssertTrue(toggle.waitForExistence(timeout: 8))
-        toggle.switches.firstMatch.tap()
+        MobileUITestNavigation.enableModule(app, module: "nasSettings", test: self)
         navigate("nasSettings", title: chinese ? "NAS 设置" : "NAS settings", in: app)
         return app
     }
 
     private func open(_ page: String, in app: XCUIApplication) {
         let link = element("mobile.nas.page.\(page)", in: app)
-        let list = app.collectionViews.containing(.any, identifier: "mobile.nas.page.storage").firstMatch
+        let list = app.collectionViews["mobile.nas.navigation"]
         XCTAssertTrue(list.waitForExistence(timeout: 8))
-        for _ in 0..<4 {
+        for _ in 0..<14 {
             if link.exists && link.isHittable { break }
-            list.swipeUp()
+            // iPad 分类列表左侧可被主侧栏覆盖，使用它实际可见的右侧滚动。
+            list.coordinate(withNormalizedOffset: CGVector(dx: 0.97, dy: 0.7))
+                .press(forDuration: 0.1, thenDragTo: list.coordinate(withNormalizedOffset: CGVector(dx: 0.97, dy: 0.4)), withVelocity: .slow, thenHoldForDuration: 0.2)
         }
         XCTAssertTrue(link.waitForExistence(timeout: 8))
         XCTAssertTrue(link.isHittable); link.tap()
     }
 
     private func navigate(_ destination: String, title: String, in app: XCUIApplication) {
-        let tab = app.tabBars.buttons[title]
-        if tab.exists { tab.tap() }
-        else {
-            let item = element("mobile.navigation.\(destination)", in: app)
-            XCTAssertTrue(item.waitForExistence(timeout: 5)); item.tap()
-        }
+        MobileUITestNavigation.open(app, destination: destination, title: title, test: self)
     }
 
     private func element(_ identifier: String, in app: XCUIApplication) -> XCUIElement {

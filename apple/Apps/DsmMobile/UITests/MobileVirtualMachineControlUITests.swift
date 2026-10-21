@@ -70,7 +70,8 @@ import XCTest
         screenshot("Landscape virtual machine controls")
         XCUIDevice.shared.orientation = .portrait; reveal("virtual-machine.action.shutdown", app).tap()
         waitEnabled(reveal("virtual-machine.confirm", app)); screenshot("Virtual machine shutdown confirmation after rotation")
-        app.buttons["Cancel"].tap(); XCTAssertTrue(app.collectionViews["virtual-machine.confirmation"].waitForNonExistence(timeout: 6))
+        // 云端旋转后短点击未关闭确认页；明确按下/抬起一次，不重试危险操作。
+        app.buttons["Cancel"].press(forDuration: 0.15); XCTAssertTrue(app.collectionViews["virtual-machine.confirmation"].waitForNonExistence(timeout: 6))
     }
     func test加载空列表恢复与筛选五态() {
         let loading = launch("vmm-loading"); XCTAssertTrue(element("virtual-machine.loading", loading).waitForExistence(timeout: 8)); screenshot("Virtual machines loading"); loading.terminate()
@@ -147,7 +148,11 @@ import XCTest
         failed.buttons["virtual-machine.settings.cancel"].tap()
     }
     private func openSettings(_ app: XCUIApplication) {
-        detail("synthetic-vm", app); reveal("virtual-machine.action.edit", app).tap()
+        detail("synthetic-vm", app)
+        let edit = reveal("virtual-machine.action.edit", app)
+        waitEnabled(edit)
+        // 云端可用按钮短按后仍停在详情；明确按下/抬起一次，仍须实际打开表单。
+        edit.press(forDuration: 0.15)
         XCTAssertTrue(app.collectionViews["virtual-machine.settings.form"].waitForExistence(timeout: 10))
     }
     private func replaceSetting(_ key: String, _ text: String, _ app: XCUIApplication) {
@@ -157,11 +162,18 @@ import XCTest
         field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: previous.count))
         // 键盘事件返回后文本仍可能在变化，等到实际清空后再继续输入，保留完整值断言。
         let empty = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@ OR value == %@", "", field.placeholderValue ?? ""), object: field)
-        let cleared = XCTWaiter.wait(for: [empty], timeout: 6)
+        var cleared = XCTWaiter.wait(for: [empty], timeout: 6)
+        if cleared != .completed {
+            // 云端键盘删除事件偶发丢失；仅对仍残留的文本补发删除，再等待实际清空。
+            let remaining = field.value as? String ?? ""
+            if !remaining.isEmpty { field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: remaining.count)) }
+            cleared = XCTWaiter.wait(for: [empty], timeout: 10)
+        }
         if cleared != .completed { screenshot("Virtual machine setting did not finish clearing") }
         XCTAssertEqual(cleared, .completed, "输入框未清空：\(field.value as? String ?? "")")
         field.typeText(text)
-        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", text), object: field)], timeout: 6), .completed)
+        // 云端已显示完整文本时辅助功能查询仍耗约 7 秒；等待查询完成，不重复输入或放宽值比较。
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", text), object: field)], timeout: 15), .completed)
         if app.frame.width > 600, app.popovers.firstMatch.exists {
             app.navigationBars.containing(.button, identifier: "virtual-machine.settings.save").firstMatch.coordinate(withNormalizedOffset: CGVector(dx: 0.25, dy: 0.5)).tap()
             XCTAssertTrue(app.popovers.firstMatch.waitForNonExistence(timeout: 5))
@@ -177,7 +189,7 @@ import XCTest
         if large { app.launchArguments += ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityM"] }
         app.launchArguments += ["-lanstash.mobile.settings.appearance.v1", dark ? "dark" : "light"]
         app.launchEnvironment["LANSTASH_UI_STATE"] = mode; app.launch()
-        XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 20))
         MobileUITestNavigation.open(app, destination: "settings", title: chinese ? "App 设置" : "App settings", test: self)
         MobileUITestNavigation.enableModule(app, module: "virtualMachines", test: self)
         MobileUITestNavigation.open(app, destination: "virtualMachines", title: chinese ? "虚拟机" : "Virtual machines", test: self)

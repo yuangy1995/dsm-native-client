@@ -3,6 +3,9 @@ name: Apple Build
 on:
   workflow_dispatch:
   push:
+    # 标签由正式发布流程验收，避免重复启动整轮移动测试并占用发布执行资源。
+    branches:
+      - "**"
     paths:
       - "apple/**"
       - "tools/release/**"
@@ -31,11 +34,37 @@ jobs:
   apple-target:
     name: ${{ matrix.target }}
     runs-on: macos-26
-    timeout-minutes: 120
+    # 模块组包含独立启动的 Files 系统用例，完整回归须留出系统初始化时间。
+    timeout-minutes: ${{ matrix.target == 'shared-macos' && 120 || matrix.suite == 'modules' && 360 || 300 }}
     strategy:
       fail-fast: false
       matrix:
-        target: [shared-macos, iPhone, iPad]
+        include:
+          - target: shared-macos
+          - target: iPhone-workspace
+            family: iPhone
+            suite: workspace
+          - target: iPhone-modules
+            family: iPhone
+            suite: modules
+          - target: iPhone-administration
+            family: iPhone
+            suite: administration
+          - target: iPhone-services
+            family: iPhone
+            suite: services
+          - target: iPad-workspace
+            family: iPad
+            suite: workspace
+          - target: iPad-modules
+            family: iPad
+            suite: modules
+          - target: iPad-administration
+            family: iPad
+            suite: administration
+          - target: iPad-services
+            family: iPad
+            suite: services
     steps:
       - name: 检出仓库
         # v7.0.0
@@ -111,7 +140,7 @@ jobs:
         if: matrix.target != 'shared-macos'
         shell: bash
         env:
-          MOBILE_FAMILY: ${{ matrix.target }}
+          MOBILE_FAMILY: ${{ matrix.family }}
         run: |
           xcrun simctl list devices available --json > "$RUNNER_TEMP/mobile-simulators.json"
           python3 - "$RUNNER_TEMP/mobile-simulators.json" "$MOBILE_FAMILY" >> "$GITHUB_ENV" <<'PYTHON'
@@ -127,12 +156,14 @@ jobs:
               version = tuple(map(int, match[1].split("-")))
               for device in devices:
                   if device.get("isAvailable") and device["name"].startswith(family):
-                      candidates.append((version, device["name"] == preferred[family], device["name"], device["udid"]))
+                      candidates.append((version, device["name"] == preferred[family], device["name"], device["udid"], device["deviceTypeIdentifier"], runtime))
           if not candidates:
               raise SystemExit(f"缺少 {family} 可用模拟器，不能跳过移动端测试")
-          version, _, name, device = max(candidates)
+          version, _, name, device, device_type, runtime_id = max(candidates)
           print(f"MOBILE_DEVICE={device}")
           print(f"MOBILE_DEVICE_NAME={name}")
+          print(f"MOBILE_DEVICE_TYPE={device_type}")
+          print(f"MOBILE_RUNTIME_ID={runtime_id}")
           print(f"MOBILE_RUNTIME={'.'.join(map(str, version))}")
           PYTHON
 
@@ -150,26 +181,145 @@ jobs:
             -derivedDataPath "$RUNNER_TEMP/DsmMobile-build" -jobs 3 \
             CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-
 
-      - name: 运行全部移动单元与界面回归
+      - name: 分组运行全部移动单元与界面回归
         if: matrix.target != 'shared-macos'
         working-directory: apple/Apps/DsmMobile
         shell: bash
         env:
-          MOBILE_FAMILY: ${{ matrix.target }}
+          MOBILE_TARGET: ${{ matrix.target }}
+          MOBILE_SUITE: ${{ matrix.suite }}
         run: |
-          xcodebuild test-without-building \
-            -project DsmMobile.xcodeproj -scheme DsmMobile \
-            -destination "platform=iOS Simulator,id=$MOBILE_DEVICE" \
-            -derivedDataPath "$RUNNER_TEMP/DsmMobile-build" \
-            -parallel-testing-enabled NO \
-            -resultBundlePath "$RUNNER_TEMP/DsmMobile-$MOBILE_FAMILY.xcresult"
+          # 每台设备四组互补覆盖全部测试；服务设置单独运行，避免已发生的六小时超时。
+          set -o pipefail
+          administration_tests=(
+            MobileDDNSUITests MobileDirectoryUITests MobileNasReadUITests MobileNasStorageUITests
+            MobilePackageCenterUITests MobilePackageControlUITests MobilePackageInstallationUITests MobileRegionUITests
+            MobileScheduledTasksUITests MobileSystemActionsUITests
+          )
+          system_tests=(MobileFilesProviderUITests MobileShareExtensionUITests MobileTransferBackgroundUITests)
+          case "$MOBILE_SUITE" in
+            workspace)
+              test_selection=(-only-testing:DsmMobileUITests/MobileWorkspaceUITests)
+              ;;
+            modules)
+              test_selection=(-only-testing:DsmMobileTests -only-testing:DsmMobileUITests -skip-testing:DsmMobileUITests/MobileWorkspaceUITests -skip-testing:DsmMobileUITests/MobileServiceSettingsUITests)
+              for test_class in "${administration_tests[@]}"; do
+                test_selection+=("-skip-testing:DsmMobileUITests/$test_class")
+              done
+              for test_class in "${system_tests[@]}"; do
+                test_selection+=("-skip-testing:DsmMobileUITests/$test_class")
+              done
+              ;;
+            services)
+              test_selection=(-only-testing:DsmMobileUITests/MobileServiceSettingsUITests)
+              ;;
+            administration)
+              test_selection=()
+              for test_class in "${administration_tests[@]}"; do
+                test_selection+=("-only-testing:DsmMobileUITests/$test_class")
+              done
+              ;;
+            *) echo "未知移动测试分组：$MOBILE_SUITE" >&2; exit 1 ;;
+          esac
+          test_arguments=(
+            test-without-building -project DsmMobile.xcodeproj -scheme DsmMobile
+            -derivedDataPath "$RUNNER_TEMP/DsmMobile-build" -parallel-testing-enabled NO
+          )
+          capture_diagnostics=(
+            python3 "$GITHUB_WORKSPACE/tools/release/capture_apple_ui_hangs.py"
+            --output "$RUNNER_TEMP/DsmMobile-$MOBILE_TARGET-diagnostics"
+          )
+          system_result=0
+          if [[ "$MOBILE_SUITE" == modules ]]; then
+            # Files 服务曾晚于安装登记才发现扩展；只读等待实际提供器，不重试产品添加。
+            mobile_app="$RUNNER_TEMP/DsmMobile-build/Build/Products/Debug-iphonesimulator/DsmMobile.app"
+            files_bundle_id=$(python3 -c 'import plistlib, sys; print(plistlib.load(open(sys.argv[1], "rb"))["CFBundleIdentifier"])' "$mobile_app/PlugIns/DsmFiles.appex/Info.plist")
+            xcrun simctl install "$MOBILE_DEVICE" "$mobile_app"
+            files_tests=$(python3 - "$GITHUB_WORKSPACE/apple/Apps/DsmMobile/UITests/MobileFilesProviderUITests.swift" <<'PYTHON'
+          import re
+          import sys
+          from pathlib import Path
+          names = re.findall(r"\bfunc\s+(test\w+)\s*\(\s*\)", Path(sys.argv[1]).read_text())
+          if not names or len(names) != len(set(names)):
+              raise SystemExit("Files 系统用例列表为空或重复，不能跳过验证")
+          print("\n".join(names))
+          PYTHON
+            )
+            files_index=0
+            files_device=""
+            xcrun simctl shutdown "$MOBILE_DEVICE"
+            cleanup_files_device() {
+              if [[ -n "$files_device" ]]; then
+                xcrun simctl shutdown "$files_device" >/dev/null 2>&1 || true
+                xcrun simctl delete "$files_device" || true
+              fi
+            }
+            trap cleanup_files_device EXIT
+            while IFS= read -r test_name; do
+              files_index=$((files_index + 1))
+              # 每例新建同型号/运行时设备，不继承选择器缓存或克隆模板中的系统索引数据库。
+              files_device=$(xcrun simctl create "LanStash-$MOBILE_TARGET-files-$files_index" "$MOBILE_DEVICE_TYPE" "$MOBILE_RUNTIME_ID")
+              test -n "$files_device"
+              xcrun simctl bootstatus "$files_device" -b
+              xcrun simctl install "$files_device" "$mobile_app"
+              files_discovered=false
+              for attempt in {1..60}; do
+                discovered=$(xcrun simctl spawn "$files_device" fileproviderctl dump "$files_bundle_id")
+                if printf '%s\n' "$discovered" | grep -Fx "$files_bundle_id" >/dev/null; then
+                  files_discovered=true
+                  break
+                fi
+                sleep 2
+              done
+              if [[ "$files_discovered" != true ]]; then
+                echo "系统尚未发现 Files 扩展，当前用例未执行：$test_name" >&2
+                if [[ "$system_result" -eq 0 ]]; then system_result=1; fi
+              else
+                xcodebuild "${test_arguments[@]}" -destination "platform=iOS Simulator,id=$files_device" \
+                  -resultBundlePath "$RUNNER_TEMP/DsmMobile-$MOBILE_TARGET-system-files-$files_index.xcresult" \
+                  "-only-testing:DsmMobileUITests/MobileFilesProviderUITests/$test_name" \
+                  2>&1 | "${capture_diagnostics[@]}" --device "$files_device" || {
+                    failed_result=$?
+                    if [[ "$system_result" -eq 0 ]]; then system_result=$failed_result; fi
+                  }
+              fi
+              # 用例仍须自行完成域清理；独立结果封存后只回收本例新建的模拟器。
+              xcrun simctl shutdown "$files_device"
+              xcrun simctl delete "$files_device"
+              files_device=""
+            done <<< "$files_tests"
+            trap - EXIT
+            xcrun simctl bootstatus "$MOBILE_DEVICE" -b
+            # 其余系统用例独立封存结果，Files 失败不能省略分享和后台回归。
+            system_selection=()
+            for test_class in "${system_tests[@]}"; do
+              if [[ "$test_class" != MobileFilesProviderUITests ]]; then
+                system_selection+=("-only-testing:DsmMobileUITests/$test_class")
+              fi
+            done
+            xcodebuild "${test_arguments[@]}" -destination "platform=iOS Simulator,id=$MOBILE_DEVICE" \
+              -resultBundlePath "$RUNNER_TEMP/DsmMobile-$MOBILE_TARGET-system.xcresult" \
+              "${system_selection[@]}" 2>&1 | "${capture_diagnostics[@]}" --device "$MOBILE_DEVICE" || {
+                failed_result=$?
+                if [[ "$system_result" -eq 0 ]]; then system_result=$failed_result; fi
+              }
+          fi
+          suite_result=0
+          xcodebuild "${test_arguments[@]}" -destination "platform=iOS Simulator,id=$MOBILE_DEVICE" \
+            -resultBundlePath "$RUNNER_TEMP/DsmMobile-$MOBILE_TARGET.xcresult" \
+            "${test_selection[@]}" 2>&1 | "${capture_diagnostics[@]}" --device "$MOBILE_DEVICE" || suite_result=$?
+          # 首段失败仍运行余下测试，两段任一失败均保留失败退出码。
+          if [[ "$system_result" -ne 0 ]]; then exit "$system_result"; fi
+          exit "$suite_result"
 
       - name: 上传移动端测试结果
         if: always() && matrix.target != 'shared-macos'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: LanStash-Apple-mobile-tests-${{ matrix.target }}
-          path: ${{ runner.temp }}/DsmMobile-*.xcresult
+          path: |
+            ${{ runner.temp }}/DsmMobile-*.xcresult
+            ${{ runner.temp }}/DsmMobile-*-diagnostics
           if-no-files-found: warn
 
       - name: 打包 macOS 应用

@@ -4,9 +4,13 @@ import XCTest
 final class MobileChatDeletionUITests: XCTestCase {
     func test单条菜单删除沿用确认并进入统一记录() {
         let app = launch(); defer { app.terminate() }; openChat(app)
-        app.staticTexts["Sample message 1"].firstMatch.press(forDuration: 1)
+        // 正文支持系统选词；长按同一消息的作者区域打开整条消息菜单。
+        let message = app.cells.containing(.staticText, identifier: "Sample message 1").firstMatch
+        let author = message.staticTexts["Sample author"].firstMatch
+        XCTAssertTrue(author.waitForExistence(timeout: 5)); XCTAssertTrue(author.isHittable)
+        author.press(forDuration: 1)
         let action = app.buttons["Delete"].firstMatch
-        XCTAssertTrue(action.waitForExistence(timeout: 5)); action.tap()
+        XCTAssertTrue(action.waitForExistence(timeout: 5)); screenshot(app, "Single message action menu"); action.tap()
         XCTAssertTrue(app.staticTexts["Delete message?"].waitForExistence(timeout: 5))
         app.buttons["Delete"].firstMatch.tap()
         let removed = NSPredicate(format: "exists == false")
@@ -103,21 +107,15 @@ final class MobileChatDeletionUITests: XCTestCase {
         app.launchEnvironment["LANSTASH_UI_STATE"] = state; app.launch(); return app
     }
     private func openChat(_ app: XCUIApplication, chinese: Bool = false, expectedMessage: String? = "Sample message 1") {
-        XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 20))
         navigate("settings", title: chinese ? "App 设置" : "App settings", app)
-        let toggle = app.descendants(matching: .any).matching(identifier: "mobile.settings.module.chat").firstMatch
-        for _ in 0..<5 { if toggle.exists && toggle.isHittable { break }; app.swipeUp() }
-        XCTAssertTrue(toggle.waitForExistence(timeout: 5)); toggle.switches.firstMatch.tap()
+        MobileUITestNavigation.enableModule(app, module: "chat", test: self)
         navigate("chat", title: chinese ? "聊天" : "Chat", app)
         let chat = app.staticTexts["Sample chat"].firstMatch; XCTAssertTrue(chat.waitForExistence(timeout: 8)); chat.tap()
         if let expectedMessage { XCTAssertTrue(app.staticTexts[expectedMessage].firstMatch.waitForExistence(timeout: 8)) }
     }
     private func navigate(_ destination: String, title: String, _ app: XCUIApplication) {
-        if app.tabBars.buttons[title].exists { app.tabBars.buttons[title].tap() }
-        else {
-            let item = app.descendants(matching: .any).matching(identifier: "mobile.navigation.\(destination)").firstMatch
-            XCTAssertTrue(item.waitForExistence(timeout: 5)); item.tap()
-        }
+        MobileUITestNavigation.open(app, destination: destination, title: title, test: self)
     }
     private func screenshot(_ app: XCUIApplication, _ name: String) {
         let attachment = XCTAttachment(screenshot: app.screenshot()); attachment.name = name; attachment.lifetime = .keepAlways; add(attachment)

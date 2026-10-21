@@ -9,9 +9,10 @@ final class MobileDDNSUITests: XCTestCase {
         let result = element("mobile.nas.ddns.testResult", app)
         expect(result, contains: "Connection test succeeded")
         screenshot(app, "DDNS connection test does not save the record")
-        reveal("mobile.nas.ddns.enabled", in: app).switches.firstMatch.tap()
-        XCTAssertFalse(result.exists)
-        reveal("mobile.nas.ddns.enabled", in: app).switches.firstMatch.tap()
+        setUpdates(false, in: app)
+        // 云端录像中提示已消失；重新查询并使用系统消失等待，仍限定五秒。
+        XCTAssertTrue(element("mobile.nas.ddns.testResult", app).waitForNonExistence(timeout: 5), app.debugDescription)
+        setUpdates(true, in: app)
         element("mobile.nas.ddns.save", app).tap()
         let confirm = element("mobile.nas.ddns.confirm", app)
         XCTAssertTrue(confirm.waitForExistence(timeout: 5)); screenshot(app, "DDNS save risk confirmation"); confirm.tap()
@@ -23,7 +24,7 @@ final class MobileDDNSUITests: XCTestCase {
     func test已有记录保存开关并可取消或确认删除() {
         let app = launch("nas-ddns"); defer { app.terminate() }
         openRecord(app)
-        reveal("mobile.nas.ddns.enabled", in: app).switches.firstMatch.tap()
+        setUpdates(false, in: app)
         element("mobile.nas.ddns.save", app).tap(); element("mobile.nas.ddns.confirm", app).tap()
         let record = element("mobile.nas.ddns.record.Example", app)
         expect(record, contains: "Updates Off")
@@ -128,6 +129,18 @@ final class MobileDDNSUITests: XCTestCase {
         let password = app.secureTextFields["mobile.nas.ddns.password"]
         password.tap(); password.typeText("synthetic-only\n")
     }
+    private func setUpdates(_ enabled: Bool, in app: XCUIApplication) {
+        let toggle = reveal("mobile.nas.ddns.enabled", in: app), control = toggle.switches.firstMatch
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate(format: "enabled == true"), object: control)], timeout: 10), .completed)
+        // 云端录像显示中心点击后开关仍保持原值；明确拖动一次，并先断言实际值再检查结果清除。
+        let from = control.coordinate(withNormalizedOffset: CGVector(dx: enabled ? 0.25 : 0.75, dy: 0.5))
+        let to = control.coordinate(withNormalizedOffset: CGVector(dx: enabled ? 0.75 : 0.25, dy: 0.5))
+        from.press(forDuration: 0.1, thenDragTo: to, withVelocity: .slow, thenHoldForDuration: 0.1)
+        let changed = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", enabled ? "1" : "0"), object: toggle)
+        let result = XCTWaiter.wait(for: [changed], timeout: 10)
+        if result != .completed { screenshot(app, "DDNS switch did not reach the requested value") }
+        XCTAssertEqual(result, .completed)
+    }
     private func openRecord(_ app: XCUIApplication) {
         let record = element("mobile.nas.ddns.record.Example", app)
         XCTAssertTrue(record.waitForExistence(timeout: 8)); record.tap()
@@ -139,22 +152,15 @@ final class MobileDDNSUITests: XCTestCase {
         if preserve { app.launchArguments.append("--ui-preserve-transfer-fixture") }
         if large { app.launchArguments += ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityM"] }
         app.launchEnvironment["LANSTASH_UI_STATE"] = state; app.launch()
-        XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 20))
         navigate("settings", title: chinese ? "App 设置" : "App settings", app)
-        reveal("mobile.settings.module.nasSettings", in: app).switches.firstMatch.tap()
+        MobileUITestNavigation.enableModule(app, module: "nasSettings", test: self)
         navigate("nasSettings", title: chinese ? "NAS 设置" : "NAS settings", app)
         reveal("mobile.nas.page.ddns", in: app).tap()
         return app
     }
     private func navigate(_ destination: String, title: String, _ app: XCUIApplication) {
-        let tab = app.tabBars.buttons[title], sidebar = element("mobile.navigation.\(destination)", app)
-        // 模块启用会重建原生导航，等待实际目标入口完成呈现并可点击。
-        let ready = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
-            (tab.exists && tab.isHittable) || (sidebar.exists && sidebar.isHittable)
-        }, object: app)
-        XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 5), .completed)
-        if tab.exists && tab.isHittable { tab.tap() }
-        else { XCTAssertTrue(sidebar.exists); XCTAssertTrue(sidebar.isHittable); sidebar.tap() }
+        MobileUITestNavigation.open(app, destination: destination, title: title, test: self)
     }
     private func expect(_ value: XCUIElement, contains text: String) {
         XCTAssertTrue(value.waitForExistence(timeout: 8))

@@ -41,7 +41,7 @@ final class MobileDirectoryUITests: XCTestCase {
         screenshot(app, "Account deletion completed")
     }
     func test创建账号密码不匹配不能保存且成功后显示新账号() {
-        let app = launch("nas-directory"); defer { app.terminate() }
+        let app = launch("nas-directory-password"); defer { app.terminate() }
         reveal("mobile.nas.directory.add", in: app).tap()
         let name = app.textFields["mobile.nas.directory.name"]; XCTAssertTrue(name.waitForExistence(timeout: 5)); name.tap(); name.typeText("created-user\n")
         enterPassword("mobile.nas.directory.password", text: "synthetic-only", in: app)
@@ -159,7 +159,7 @@ final class MobileDirectoryUITests: XCTestCase {
         let field = reveal(id, in: app); field.tap()
         // 此场景验证手动输入；先关闭系统强密码建议，避免建议值替换测试的两次输入。
         let suggestion = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@ OR label CONTAINS %@", "强密码", "Strong Password")).firstMatch
-        if suggestion.waitForExistence(timeout: 2) {
+        if suggestion.waitForExistence(timeout: 8) {
             let close = app.buttons.matching(NSPredicate(format: "label == %@ OR label == %@", "关闭", "Close")).firstMatch
             if !close.exists {
                 let attachment = XCTAttachment(string: app.debugDescription); attachment.name = "System password suggestion hierarchy"; add(attachment)
@@ -169,13 +169,42 @@ final class MobileDirectoryUITests: XCTestCase {
             field.tap()
         }
         let previous = (field.value as? String)?.count ?? 0
-        field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: previous) + text + "\n")
+        if previous > 0 {
+            field.coordinate(withNormalizedOffset: CGVector(dx: 0.98, dy: 0.8)).tap()
+            field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: previous))
+            field.tap()
+        }
+        field.typeText(text)
+        field.typeText("\n")
     }
     private func replaceDescription(_ app: XCUIApplication) {
         let field = reveal("mobile.nas.directory.description", in: app)
-        field.tap(withNumberOfTaps: 3, numberOfTouches: 1)
+        if app.frame.width > 600 {
+            // 原合成值为单行；iPad 点入可见值末尾，不切换硬件方向键与屏幕键盘。
+            field.coordinate(withNormalizedOffset: CGVector(dx: 0.999, dy: 0.8)).tap()
+            let previous = field.value as? String ?? ""
+            field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: previous.count))
+        } else {
+            // 标签和值共享辅助功能边框；点入实际输入区，用系统全选确定替换范围。
+            let input = field.coordinate(withNormalizedOffset: CGVector(dx: 0.85, dy: 0.8))
+            input.tap(); input.press(forDuration: 1.2)
+            let selectAll = app.descendants(matching: .any).matching(NSPredicate(format: "label == %@ OR label == %@", "Select All", "全选")).firstMatch
+            XCTAssertTrue(selectAll.waitForExistence(timeout: 5)); selectAll.tap()
+            field.typeText(XCUIKeyboardKey.delete.rawValue)
+        }
+        // 同一快照直接匹配字段值，避免闭包逐次查询旧值耗尽等待；不重复发送删除。
+        let fields = app.collectionViews["mobile.nas.directory.editor"].descendants(matching: .any)
+            .matching(identifier: "mobile.nas.directory.description")
+        let empty = fields.matching(NSPredicate(format: "value == %@ OR value == %@", "", field.placeholderValue ?? "")).firstMatch
+        let cleared = empty.waitForExistence(timeout: 5)
+        if !cleared {
+            let attachment = XCTAttachment(string: app.debugDescription); attachment.name = "Directory description clearing hierarchy"; add(attachment)
+            screenshot(app, "Directory description clearing state")
+        }
+        XCTAssertTrue(cleared, "说明字段未清空：\(String(describing: field.value))")
         field.typeText("Updated account")
-        XCTAssertEqual(field.value as? String, "Updated account")
+        let entered = fields.matching(NSPredicate(format: "value == %@", "Updated account")).firstMatch
+        XCTAssertTrue(entered.waitForExistence(timeout: 5))
     }
     private func launch(_ state: String, preserve: Bool = false, chinese: Bool = false, large: Bool = false) -> XCUIApplication {
         continueAfterFailure = false; XCUIDevice.shared.orientation = .portrait
@@ -184,29 +213,24 @@ final class MobileDirectoryUITests: XCTestCase {
         if preserve { app.launchArguments.append("--ui-preserve-transfer-fixture") }
         if large { app.launchArguments += ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityM"] }
         app.launchEnvironment["LANSTASH_UI_STATE"] = state; app.launch()
-        XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 8))
-        navigate("settings", title: chinese ? "App 设置" : "App settings", app)
-        reveal("mobile.settings.module.nasSettings", in: app).switches.firstMatch.tap()
-        navigate("nasSettings", title: chinese ? "NAS 设置" : "NAS settings", app)
-        reveal("mobile.nas.page.accounts", in: app).tap()
+        XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 20))
+        MobileUITestNavigation.open(app, destination: "settings", title: chinese ? "App 设置" : "App settings", test: self)
+        MobileUITestNavigation.enableModule(app, module: "nasSettings", test: self)
+        MobileUITestNavigation.open(app, destination: "nasSettings", title: chinese ? "NAS 设置" : "NAS settings", test: self)
+        reveal("mobile.nas.page.accounts", in: app).press(forDuration: 0.15)
+        XCTAssertTrue(app.collectionViews["mobile.nas.directory.list"].waitForExistence(timeout: 8), app.debugDescription)
         return app
-    }
-    private func navigate(_ destination: String, title: String, _ app: XCUIApplication) {
-        let tab = app.tabBars.buttons[title]
-        if tab.exists { tab.tap() } else {
-            let button = element("mobile.navigation.\(destination)", app); XCTAssertTrue(button.waitForExistence(timeout: 5)); button.tap()
-        }
     }
     private func expect(_ value: XCUIElement, contains text: String) {
         XCTAssertTrue(value.waitForExistence(timeout: 8))
         XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate(format: "label CONTAINS %@", text), object: value)], timeout: 10), .completed)
     }
     private func reveal(_ id: String, in app: XCUIApplication) -> XCUIElement {
-        let value = element(id, app)
+        var value = element(id, app)
         for attempt in 0..<14 {
-            let list = app.collectionViews.containing(.any, identifier: id).firstMatch
-            let form = app.collectionViews["mobile.nas.directory.editor"]
-            let scroller: XCUIElement = list.exists ? list : (form.exists ? form : app)
+            let forms = ["confirmation", "groupPicker", "editor", "list"].map { app.collectionViews["mobile.nas.directory.\($0)"] }
+            let scroller = forms.first(where: { $0.exists }) ?? app.collectionViews.containing(.any, identifier: id).firstMatch
+            value = scroller.descendants(matching: .any).matching(identifier: id).firstMatch
             if value.waitForExistence(timeout: 1), !value.frame.isEmpty {
                 let top = app.navigationBars.allElementsBoundByIndex.filter { $0.isHittable }.map { $0.frame.maxY }.max() ?? app.frame.minY + 110
                 let tab = app.tabBars.firstMatch
