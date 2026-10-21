@@ -113,8 +113,29 @@ import XCTest
     private func fill(_ id: String, _ text: String, _ app: XCUIApplication) {
         let field = reveal("network.create.\(id)", app, list: "network.create.form")
         ready(field); field.tap(); field.typeText(text)
-        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(
-            predicate: NSPredicate(format: "value == %@", text), object: field)], timeout: 5), .completed)
+        let matches = { XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "value == %@", text), object: field) }
+        var result = XCTWaiter.wait(for: [matches()], timeout: 5)
+        if result != .completed {
+            let observed = field.value as? String ?? ""
+            let empty = observed.isEmpty || observed == field.placeholderValue
+            // 模拟器偶发吞掉键盘输入时，只补发实际缺失的字符；不重复已输入的内容、更不重试创建提交。
+            if empty || (text.hasPrefix(observed) && observed != text) {
+                let hierarchy = XCTAttachment(string: app.debugDescription)
+                hierarchy.name = "Network input interrupted hierarchy"; hierarchy.lifetime = .keepAlways; add(hierarchy)
+                screenshot("Network input interrupted before recovery")
+                if empty { field.tap() }
+                field.typeText(empty ? text : String(text.dropFirst(observed.count)))
+                result = XCTWaiter.wait(for: [matches()], timeout: 8)
+            }
+        }
+        if result != .completed {
+            let hierarchy = XCTAttachment(string: app.debugDescription)
+            hierarchy.name = "Network input unmatched hierarchy"; hierarchy.lifetime = .keepAlways; add(hierarchy)
+            screenshot("Network input unmatched")
+        }
+        XCTAssertEqual(result, .completed, "输入未达到目标值：\(id)")
+        guard result == .completed else { return }
         // 结束当前输入并收起键盘，避免下方字段被遮挡且滚动停在仍有焦点的输入框。
         field.typeText("\n")
         XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5))
