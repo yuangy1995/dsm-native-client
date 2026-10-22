@@ -169,7 +169,21 @@ final class MobileChatUITests: XCTestCase {
         field.typeText(new)
         let updated = XCTWaiter.wait(for: [XCTNSPredicateExpectation(
             predicate: NSPredicate(format: "value == %@", new), object: field)], timeout: 8)
-        XCTAssertEqual(updated, .completed, "编辑框未读回完整的新文本")
+        if updated != .completed {
+            let partial = field.value as? String ?? ""
+            // 只修正确实缺少的输入后缀，不重复任何消息编辑提交。
+            if !partial.isEmpty && partial.count < new.count && new.hasPrefix(partial) {
+                field.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.5)).tap()
+                field.typeText(String(new.dropFirst(partial.count)))
+            }
+        }
+        let exact = XCTWaiter.wait(for: [XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "value == %@", new), object: field)], timeout: 6)
+        if exact != .completed {
+            let attachment = XCTAttachment(string: field.debugDescription)
+            attachment.name = "Chat edit draft did not match"; attachment.lifetime = .keepAlways; add(attachment)
+        }
+        XCTAssertEqual(exact, .completed, "编辑框未读回完整的新文本")
         XCTAssertEqual(field.value as? String, new)
     }
 

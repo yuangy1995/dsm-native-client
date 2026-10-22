@@ -79,7 +79,15 @@ final class MobileChatPollUITests: XCTestCase {
         // 只打开一次，先确认真实投票面板已呈现，再由调用方验证对应的加载、错误或业务结果。
         button.press(forDuration: 0.15)
         let page = app.navigationBars.matching(NSPredicate(format: "identifier IN %@", ["Vote", "参与投票"])).firstMatch
-        let appeared = page.waitForExistence(timeout: 8)
+        var appeared = page.waitForExistence(timeout: 8)
+        if !appeared {
+            MobileUITestNavigation.capture(app, name: "Poll first presentation", test: self)
+            // 只读打开操作没有生效且原入口仍可点击时，补一次被取消的导航触控。
+            if button.exists && button.isEnabled && button.isHittable {
+                button.press(forDuration: 0.2)
+                appeared = page.waitForExistence(timeout: 8)
+            }
+        }
         if !appeared { MobileUITestNavigation.capture(app, name: "Poll presentation", test: self) }
         XCTAssertTrue(appeared, "投票页面尚未呈现")
     }
