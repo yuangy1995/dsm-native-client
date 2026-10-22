@@ -22,6 +22,7 @@
 | `dsm-desktop-app-privileges` | [DSM 当前账号应用权限摘要（候选）](dsm-account-and-connection.md#dsm-desktop-app-privileges) |
 | `quickconnect-relay-control` | [QuickConnect 控制面与区域转介](dsm-account-and-connection.md#quickconnect-relay-control) |
 | `file-station-remote-mount` | [File Station 远程挂载内部接口](file-station.md#file-station-remote-mount) |
+| `dsm-system-update-install` | [DSM 在线补丁下载与安装](dsm-system-monitoring.md#dsm-system-update-install) |
 | `dsm-system-observability` | [DSM 基础读取接口](dsm-system-monitoring.md#dsm-system-observability) |
 | `dsm-system-processes` | [DSM 系统进程与服务进程组内部 API](dsm-system-monitoring.md#dsm-system-processes) |
 | `dsm-power-schedule` | [DSM 电源计划内部 API](dsm-hardware-and-power.md#dsm-power-schedule) |

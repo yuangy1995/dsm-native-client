@@ -37,6 +37,11 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
     private var activeDDNSProviderIDs: Set<String> = []
     private var isDDNSRefreshActive = false
     var isPowerActionActive = false
+    var systemUpdateRequestActive = false
+    var systemUpdatePlan: NasSystemUpdatePlan?
+    var systemUpdateWasSubmitted = false
+    var systemUpdateSubmittedPlan: NasSystemUpdatePlan?
+    var systemUpdateSubmittedAt: Date?
     var isZRAMUpdateActive = false
     var isPowerScheduleUpdateActive = false
     private var activeDiskTestIDs: Set<String> = []
@@ -8468,6 +8473,10 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
             ]
         )
         let update = updateResponse["update"] ?? .null
+        if let result = update.string(["rss_result"]), result != "success" {
+            throw AppError(category: .networkUnavailable, isRetryable: true,
+                           safeUserMessage: L10n.string("system-update.read-failed"))
+        }
         let currentVersion = normalized(system.string(["firmware_ver", "version"]))
         let latestVersion = normalized(update.string(["version"]))
         let releaseNotes = normalized(update.string([

@@ -6111,24 +6111,27 @@ struct SelectiveCacheCleanupSheet: View {
 }
 
 /// 在文件网格范围内读取实际鼠标事件；不接管系统拖放、滚动、菜单或键盘焦点。
-private struct FileGridMouseInput: NSViewRepresentable {
+struct FileGridMouseInput: NSViewRepresentable {
     let onMouseDown: (CGPoint, NSEvent.ModifierFlags) -> Void
     let onMouseDragged: (CGPoint) -> Void
     let onMouseUp: (CGPoint, Int) -> Void
     let onRightMouseDown: (CGPoint) -> Void
+    var capturesDrag: () -> Bool = { false }
 
     func makeNSView(context: Context) -> FileGridMouseView { FileGridMouseView() }
     func updateNSView(_ view: FileGridMouseView, context: Context) {
         view.onMouseDown = onMouseDown; view.onMouseDragged = onMouseDragged
         view.onMouseUp = onMouseUp; view.onRightMouseDown = onRightMouseDown
+        view.capturesDrag = capturesDrag
     }
 }
 
-private final class FileGridMouseView: NSView {
+final class FileGridMouseView: NSView {
     var onMouseDown: (CGPoint, NSEvent.ModifierFlags) -> Void = { _, _ in }
     var onMouseDragged: (CGPoint) -> Void = { _ in }
     var onMouseUp: (CGPoint, Int) -> Void = { _, _ in }
     var onRightMouseDown: (CGPoint) -> Void = { _ in }
+    var capturesDrag: () -> Bool = { false }
     private var monitor: Any?
     private var isInsideGrid = false
     override var isFlipped: Bool { true }
@@ -6152,10 +6155,15 @@ private final class FileGridMouseView: NSView {
                     }
                 }
             case .leftMouseDragged:
-                if self.isInsideGrid { self.onMouseDragged(point) }
+                if self.isInsideGrid {
+                    self.onMouseDragged(point)
+                    if self.capturesDrag() { return nil }
+                }
             case .leftMouseUp:
+                let captured = self.isInsideGrid && self.capturesDrag()
                 if self.isInsideGrid { self.onMouseUp(point, event.clickCount) }
                 self.isInsideGrid = false
+                if captured { return nil }
             case .rightMouseDown:
                 if self.visibleRect.contains(point) { self.onRightMouseDown(point) }
             default: break

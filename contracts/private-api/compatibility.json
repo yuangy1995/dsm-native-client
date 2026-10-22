@@ -1,7 +1,7 @@
 {
   "$schema": "../schemas/private-api-compatibility.schema.json",
   "schemaVersion": 1,
-  "updatedAt": "2026-10-17",
+  "updatedAt": "2026-10-23",
   "environments": [
     {
       "id": "lab-a-dsm-7-2-1-69057-u12-20260729",
@@ -1666,6 +1666,30 @@
       ],
       "fallback": "依稳定端点定义与API通用标准处理能力、权限及错误；读取局部降级，结果未知的写操作只查询原结果，不盲目重放。历史verification不作为精确版本白名单。",
       "documentRef": "docs/api/discovery/endpoints/chat.md",
+      "verifications": []
+    },
+    {
+      "id": "dsm-system-update-install",
+      "componentId": "dsm-core",
+      "scope": "DSM 在线补丁更新",
+      "capability": "单机补丁下载、安装前检查、安装与进度回读；方法和许可语义见 documentRef。",
+      "classification": "internal",
+      "operation": "mixed",
+      "risk": "critical",
+      "apiNames": [
+        "SYNO.Core.Upgrade",
+        "SYNO.Core.Upgrade.Server",
+        "SYNO.Core.Upgrade.Server.Download",
+        "SYNO.SHA.Upgrade"
+      ],
+      "paths": [
+        "runtime-discovered-via-SYNO.API.Info"
+      ],
+      "methods": [
+        "POST"
+      ],
+      "fallback": "额外可行性警告、集群和大版本转到 DSM；结果未知只读回查，不重放安装。2026-10-22 官方 U12 到 U13 行为观察见端点文档；设备关系未确认，不绑定 lab-a 或伪造机器验证。",
+      "documentRef": "docs/api/discovery/endpoints/dsm-system-monitoring.md",
       "verifications": []
     }
   ]

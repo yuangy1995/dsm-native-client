@@ -582,6 +582,11 @@ public final class SynologyPhotosModel {
         startAutomaticPreviews()
     }
 
+    public var canResumeAutomaticPreviews: Bool {
+        automaticPreviewEnabled == true &&
+            (automaticPreviewPaused || automaticPreviewError != nil || !automaticPreviewFailed.isEmpty)
+    }
+
     /// 一个处理周期仅领取一项；直接复用Repository操作编号，不刷新图库和月份锚点。
     public func processAutomaticPreview(now: Date = Date()) async {
         guard isModuleEnabled, hasLoaded, deletionRecoveryAllowsWrites, similarRecoveryAllowsWrites, albumRecoveryReady, albumRecoveryError == nil || hasPendingAutomaticPreview,
@@ -3946,6 +3951,35 @@ public final class SynologyPhotosModel {
     }
 
     public var selectedPhotos: [SynologyPhoto] { items.filter { selectedPhotoIDs.contains($0.id) } }
+
+    /// 桌面图库采用单击替换、Command 增减、Shift 范围选择，不保留空的多选模式。
+    public func selectPhoto(_ photo: SynologyPhoto, extending: Bool = false, adding: Bool = false) {
+        guard !isDeleting, !isBrowsingBlocked, items.contains(where: { $0.id == photo.id }) else { return }
+        if extending, let anchor = selectionAnchorID,
+           let first = items.firstIndex(where: { $0.id == anchor }),
+           let last = items.firstIndex(where: { $0.id == photo.id }) {
+            let range = Set(items[min(first, last)...max(first, last)].map(\.id))
+            selectedPhotoIDs = adding ? selectedPhotoIDs.union(range) : range
+        } else if adding {
+            if !selectedPhotoIDs.insert(photo.id).inserted { selectedPhotoIDs.remove(photo.id) }
+            selectionAnchorID = photo.id
+        } else {
+            selectedPhotoIDs = [photo.id]
+            selectionAnchorID = photo.id
+        }
+        if !adding { selectedFolderIDs = [] }
+        isSelecting = selectedItemCount > 0
+    }
+
+    /// 框选只接纳当前图库中的项目；不允许旧页面的几何结果带入新页面。
+    public func selectPhotoIDs(_ ids: Set<SynologyPhotoID>, preservingFolders: Bool = false) {
+        guard !isDeleting, !isBrowsingBlocked else { return }
+        selectedPhotoIDs = ids.intersection(Set(items.map(\.id)))
+        if !preservingFolders { selectedFolderIDs = [] }
+        selectionAnchorID = items.first(where: { selectedPhotoIDs.contains($0.id) })?.id
+        isSelecting = selectedItemCount > 0
+    }
+
     public var canDeleteSelection: Bool {
         deletionRecoveryAllowsWrites && similarRecoveryAllowsWrites && selectedItemCount > 0 && (selectedFolderIDs.isEmpty || managementFeatures.contains(.folderDeletion)) && selectedPhotos.allSatisfy(canModifyOriginal) && !isDeleting && !isCheckingDeletion && !isManaging && pendingMutationID == nil && pendingDeletionPhotos.isEmpty
     }

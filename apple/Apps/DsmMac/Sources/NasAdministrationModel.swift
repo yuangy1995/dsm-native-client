@@ -65,6 +65,7 @@ actor UnavailableNasAdministrationRepository: NasSettingsRepository {
 final class NasSettingsModel {
     var selectedPage: NasSettingsPage = .overview
     var isLiveUpdatesPaused = false
+    let systemUpdate: NasSystemUpdateModel
 
     var logCurrentPage: Int = 1
     var logPageSize: Int = 50
@@ -140,6 +141,7 @@ final class NasSettingsModel {
         shareAccessRepository: (any NasShareAccessRepository)? = nil
     ) {
         self.repository = repository
+        self.systemUpdate = NasSystemUpdateModel(repository: repository)
         self.storageAnalysisEngine = fileRepository.map(StorageAnalysisEngine.init(repository:))
         if let shareAccessRepository {
             self.shareAccessRepository = shareAccessRepository
@@ -986,7 +988,7 @@ final class NasSettingsModel {
     func performPowerAction(
         _ action: NasPowerAction
     ) async throws -> MutationResult {
-        guard !isPerformingPowerAction else { throw settingsBusyError() }
+        guard !isPerformingPowerAction, !systemUpdate.blocksPowerActions else { throw settingsBusyError() }
         isPerformingPowerAction = true
         defer { isPerformingPowerAction = false }
         return try await repository.performPowerActionResult(action)

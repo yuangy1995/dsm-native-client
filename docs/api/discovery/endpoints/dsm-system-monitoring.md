@@ -230,25 +230,13 @@ macOS 当前从 `start=0` 读取单个最多 500 项的快照，不持续轮询�
 - 版本和说明只清理首尾空白，服务器返回的用户可见正文保持原文。
 - 候选版本为空，或与当前版本完全相同时，不宣告存在更新。
 - 客户端不根据版本字符串自行计算升级路径，也不把 `promotion` 当作系统更新。
+- `update.rss_result` 存在且不是 `success` 时显示读取失败，不以空候选宣告最新。
 
-macOS 检查结果会明确说明安装仍需在 DSM 中安排；按钮和图标只表达“检查”，不暗示已经
-下载。发布说明存在时随候选版本显示，不包含安装按钮。
+macOS 将检查结果用于[补丁更新流程](#dsm-system-update-install)；其他端保持只读检查。
 
 ### 安装边界
 
-当前证据只覆盖 `check`。静态目录没有形成系统更新下载、上传、校验、安装、取消、任务
-轮询或重启恢复的稳定契约，因此客户端保持这些写入口关闭。
-
-增加安装能力前至少需要版本化记录：
-
-1. 更新来源、签名/校验、目标 build 与适用机型的权威字段；
-2. 下载、准备、安装、迁移、重启和失败回滚的状态机与任务标识；
-3. 空间、套件、存储池、加密卷、UPS、电源和管理员权限预检；
-4. 提交前取消、提交后取消、断线、超时与不可回读阶段的结果语义；
-5. 全局防重复、用户确认、维护窗口提示、最终 build 回读和服务恢复核对。
-
-任何安装提交都可能中断服务并重启 NAS；未满足这些条件时不得根据接口名称或 DSM 网页
-按钮猜测请求。
+下载安装与最终版本核验由独立端点组定义。检查接口本身不授权安装，也不把候选消失当作安装成功。
 
 ### 版本验证
 
@@ -265,14 +253,14 @@ macOS 检查结果会明确说明安装仍需在 DSM 中安排；按钮和图标
 - 更新检查失败只影响本次检查，不阻断系统概况、文件或其他设置页面。
 - 不自动重试检查，不把网络错误解释为“已是最新版本”。
 - 当前版本缺失时仍可展示服务器明确返回的候选版本，但不自行比较版本号。
-- 新 DSM build 上继续允许只读检查；安装写入仍默认关闭。
+- 新 DSM build 上继续允许只读检查；安装是否可用由补丁更新端点组的实际能力与预检结果决定。
 
 ### 未验证事项
 
 - 无更新、分阶段更新、重大版本、回退版本、区域限制、代理离线和更新服务维护时的所有
   真实响应形态尚未覆盖。
 - 发布说明可能包含富文本；当前仅按普通文字展示。
-- 下载、安装、取消、任务进度、重启与恢复均未验证且保持关闭。
+- 原生客户端的实际安装与异常恢复验收见[当前限制](../../../progress/KNOWN_LIMITATIONS.md)。
 
 <a id="dsm-task-scheduler"></a>
 ## DSM 任务计划与运行结果内部 API
@@ -352,3 +340,36 @@ Mac 编辑窗口将原始详情快照传回模型；保存前重新核对，保�
 ## 证据与实现范围
 
 接口证据按[环境记录](../environments/INDEX.md)中的日期、版本、权限和场景读取；静态线索与合成测试不能提升真实行为等级。各端实现及当前缺口只维护于[平台矩阵](../../../progress/PLATFORM_MATRIX.md)和[已知限制](../../../progress/KNOWN_LIMITATIONS.md)。通用认证、危险写与结果规则见[通用标准](../../reference/common.md)。
+
+<a id="dsm-system-update-install"></a>
+## DSM 在线补丁下载与安装
+
+端点组 `dsm-system-update-install`，组件 `dsm-core`，内部 `mixed` 操作，风险 `critical`。安装会中断服务并可能重启 NAS；只支持在线单机 `smallupdate`，不上传本地固件，不执行降级、取消或猜测迁移步骤。路径及参数编码由 `SYNO.API.Info` 发现；`requestFormat=json` 表示参数值 JSON 编码，不改变 HTTP 表单正文。
+
+### 请求与状态
+
+| API / 方法 | 版本 | 参数 | 结果与用途 |
+| --- | ---: | --- | --- |
+| `SYNO.Core.Upgrade.basic_status` | 1 | 无 | `status`、`allow_upgrade:Boolean`、`target`，准备完成时有 `patch_info` |
+| `SYNO.Core.Upgrade.Server.Download.start` | 2 | `target="update"`、`need_auto_smallupdate=true` | 开始服务器提供的在线更新下载；成功响应不表示下载完成 |
+| `SYNO.Core.Upgrade.Server.Download.progress` | 2 | `need_download_target=true` | `percent:Number`、`status`、`target`、`version` |
+| `SYNO.Core.Upgrade.status` | 1 | `feasibility_check=true` | 安装许可与可行性；`check_type=hard/soft` 分别有阻断/额外确认提示 |
+| `SYNO.Core.Upgrade.check_having_upgradeable_drives` | 1 | `upgrade_to={base:buildnumber,nano:smallfixnumber}` | 官方安装前驱动检查；失败停止，响应真值影响官方重启提示，客户端统一明确提示可能重启 |
+| `SYNO.Core.Upgrade.start` | 1 | `force=true`、`type="server"` | 明确成功仅表示接受安装；提交阶段断线或 HTTP 5xx 保留结果未知且不重放 |
+| `SYNO.Core.Upgrade.progress` | 1 | 无 | `percent:Number`、`type`、`step`；`step` 具体值尚未形成稳定映射，不由它猜测迁移/重启阶段 |
+
+已观察 `basic_status` 的 `none`、`downloading`、`ready_upgrade`；官方脚本静态确认 `upgrading` 表示安装中、`system_busy` 表示系统忙。安装中可只读读取进度，未知或非 `update` 下载目标不冒充当前补丁。`patch_info` 包含 `buildnumber`、`smallfixnumber`、`upgradetype="smallupdate"`、`type="smallupdate"`、`reboot="now"`、`restart_all`、`restart_some`、`restart_pkgs`、`restart_servs`。不保存机型唯一标识或私有地址。百分比仅接受 0–100 的有效数字，缺失时显示不定进度，不自行计时填充。
+
+### 许可、确认与恢复
+
+- 下载前重新检查相同候选及 `status=none / allow_upgrade=true`；安装前及用户确认后均重新检查相同候选、已下载补丁的 build/Update、实际许可、可行性和驱动检查。
+- 安装确认绑定一次性计划。任何 `hard`、`soft` 或未知可行性警告均转到 DSM；不跳过额外后果确认。发现 `SYNO.SHA.Upgrade` 时保留集群专用流程，普通安装入口关闭；大版本 `dsm` 需要另有 `PreCheck.start`，不复用补丁流程。
+- 重复安装和电源操作互斥；可能提交后只读查询。带 DSM 错误码的明确拒绝或提交前证书错误可以释放安装保护，HTTP 5xx 等没有明确拒绝证据的响应保留结果未知。关闭弹窗不取消 NAS 工作；再打开继续读取同一内存状态。不新增持久化记录、不保存会话或凭据。重新登录或重启 App 后重新检查 NAS 当前版本，不自动认领或重放旧安装。
+- 安装期间只读取 NAS 本机版本和进度，不依赖外部更新服务器再次返回候选。安装 100% 只进入等待恢复；只有 `basic_status` 返回 `none`、`System.info.firmware_ver` 的完整版本与已确认目标一致，且含目标 build/Update，才能报告更新完成。需要重启的补丁还须用 `System.info.up_time` 核对启动发生在安装提交后；运行时间缺失时保留未确认状态。缺少补丁号、旧版本、候选消失或网络恢复均不足以确认成功。
+- 网络不可达/超时显示等待恢复；认证、权限和证书错误停止自动读取并给出恢复动作。轮询每 5 秒，最长 40 分钟，超时后保留未确认状态并允许用户手动回读。
+
+### 证据与五端影响
+
+[2026-10-22 官方升级观察](../environments/INDEX.md#2026-10-22-dsm-update-observation)覆盖 DSM 7.2.1-69057 Update 12 到 Update 13 的下载、安装接受、进度与重启后版本回读；这是官方页面的行为证据，不是原生客户端实际安装验收。驱动检查响应完整结构与其他升级类型仍未验证。
+
+macOS 使用增量共享领域类型与 Repository 默认不支持方法实现；iPhone/iPad 不新增安装入口，Windows/Android 代码与安装范围不变。合成回归检查许可、版本变化、额外警告、重复提交、断线未知与阶段展示；未完成的真实环境项只见[当前限制](../../../progress/KNOWN_LIMITATIONS.md)。

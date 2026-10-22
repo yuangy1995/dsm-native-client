@@ -1582,6 +1582,10 @@ final class WorkspacePresentationTests: XCTestCase {
     }
 
     func test自动预览设置中英浅深色正常加载错误与无转换器() async throws {
+        let attribute = NSAccessibility.Attribute(rawValue: "AXEnhancedUserInterface")
+        let previousAX = NSApp.accessibilityAttributeValue(attribute)
+        NSApp.accessibilitySetValue(true, forAttribute: attribute)
+        defer { NSApp.accessibilitySetValue(previousAX, forAttribute: attribute) }
         let previous = AppLanguageStore.shared.selection
         defer { AppLanguageStore.shared.selection = previous }
         for language in [AppLanguageSelection.simplifiedChinese, .english] {
@@ -1600,6 +1604,14 @@ final class WorkspacePresentationTests: XCTestCase {
                     try snapshot(host, name: "photos-automatic-\(language.rawValue)-\(scheme)-\(mode)")
                     let before = await service.commands; XCTAssertTrue(before.isEmpty)
                     if mode == "loading" { await service.releasePage(); try await settle(host) }
+                    if mode == "ready" {
+                        model.pauseAutomaticPreviews(); try await settle(host)
+                        XCTAssertTrue(model.canResumeAutomaticPreviews)
+                        let resume = try XCTUnwrap(remoteFlowElements(host).first { $0.accessibilityLabel() == L10n.string("photos.automatic.resume") || $0.accessibilityTitle() == L10n.string("photos.automatic.resume") })
+                        XCTAssertEqual(resume.value("accessibilityPerformPress") as? Bool, true)
+                        XCTAssertFalse(model.automaticPreviewPaused)
+                        try await settle(host)
+                    }
                     if mode == "ready" || mode == "unsupported" {
                         // 560×340合成窗口，开关位置由本轮中英浅深色截图核对。
                         try click(window, at: NSPoint(x: 512, y: 240)); try await settle(host)
@@ -4811,7 +4823,7 @@ final class WorkspacePresentationTests: XCTestCase {
                     let host = NSHostingView(rootView: PerformanceDashboard(
                         overview: NasSystemOverview(serverName: "Synthetic NAS", model: "Test Model", version: "DSM 7.x"),
                         history: [], connections: nil, isPaused: .constant(false), refresh: {}, onNavigateToConnections: {},
-                        isPowerActionBusy: false, onPerformPowerAction: nil, onCheckSystemUpdate: nil)
+                        isPowerActionBusy: false, onPerformPowerAction: nil, systemUpdate: nil)
                         .environment(MacAppearanceStore()).environment(AppLanguageStore.shared)
                         .environment(\.locale, AppLanguageStore.shared.locale)
                         .background(MacAppearancePalette(scheme: scheme, increasedContrast: false).content).preferredColorScheme(scheme))
@@ -5007,6 +5019,135 @@ final class WorkspacePresentationTests: XCTestCase {
                 XCTAssertEqual(rootScroll.contentView.bounds.minY, topOrigin, accuracy: 1)
                 try snapshot(host, name: "files-breadcrumb-root-\(mode)-\(scheme)")
                 let writes = await fixture.repository.writeCalls; XCTAssertEqual(writes, 0)
+            }
+        }
+    }
+
+    func test系统更新各阶段中英浅深色原生窗口() async throws {
+        let previousLanguage = AppLanguageStore.shared.selection
+        defer { AppLanguageStore.shared.selection = previousLanguage }
+        for language in [AppLanguageSelection.simplifiedChinese, .english] {
+            AppLanguageStore.shared.selection = language
+            for scheme in [ColorScheme.light, .dark] {
+                let repository = SystemUpdateRepositoryFixture(), model = NasSystemUpdateModel(repository: repository)
+                let host = NSHostingView(rootView: NasSystemUpdateView(model: model).macSheetSurface()
+                    .environment(MacAppearanceStore()).preferredColorScheme(scheme))
+                let window = attach(host, size: NSSize(width: 600, height: 520))
+                defer { window.contentView = nil; window.close() }
+                window.makeKeyAndOrderFront(nil)
+                try await settle(host)
+                for (name, status) in [("download", NasSystemUpdateStatus(phase: .downloading, percent: 54)),
+                                       ("ready", .init(phase: .ready, canInstall: true)),
+                                       ("unsupported", .init(phase: .ready, canInstall: false))] {
+                    await repository.setStatus(status); await model.refresh(); try await settle(host)
+                    try snapshot(host, name: "system-update-\(name)-\(language.rawValue)-\(scheme)")
+                }
+                await repository.setStatus(.init(phase: .ready, canInstall: true)); await model.refresh()
+                _ = await model.prepareInstallation(); await model.install(); try await settle(host)
+                try snapshot(host, name: "system-update-install-\(language.rawValue)-\(scheme)")
+                await repository.setFailure(.networkUnavailable); await model.refresh(); try await settle(host)
+                try snapshot(host, name: "system-update-reconnect-\(language.rawValue)-\(scheme)")
+                await repository.setFailure(nil); await repository.setCurrent("DSM 7.2.1-69057 Update 13")
+                await model.refresh(); try await settle(host)
+                try snapshot(host, name: "system-update-complete-\(language.rawValue)-\(scheme)")
+                XCTAssertEqual(model.phase, .completed)
+            }
+        }
+    }
+
+    func test照片单击组合键框选与双击打开() async throws {
+        NSApp.setActivationPolicy(.regular)
+        let attribute = NSAccessibility.Attribute(rawValue: "AXEnhancedUserInterface")
+        let previousAX = NSApp.accessibilityAttributeValue(attribute)
+        let previousLanguage = AppLanguageStore.shared.selection
+        defer {
+            NSApp.accessibilitySetValue(previousAX, forAttribute: attribute)
+            NSApp.setActivationPolicy(.accessory)
+            AppLanguageStore.shared.selection = previousLanguage
+        }
+        NSApp.accessibilitySetValue(true, forAttribute: attribute)
+        for language in [AppLanguageSelection.simplifiedChinese, .english] {
+            AppLanguageStore.shared.selection = language
+            for scheme in [ColorScheme.light, .dark] {
+                for isAlbum in [false, true] {
+                let source = SynologyPhotosModel(repository: DatePhotoServiceStub(), pageSize: 6)
+                await source.refresh()
+                let service = PhotoUploadServiceStub()
+                await service.configureDisplay(.init(), photos: source.items)
+                await service.setAlbumPhotos(source.items)
+                let album = SynologyPhotoCollection(id: 21, name: "Fixture album")
+                await service.configureLists([album])
+                let model = SynologyPhotosModel(repository: service, pageSize: 6)
+                if isAlbum { await model.selectSection(.albums); await model.open(album) }
+                else { await model.refresh() }
+                let items = model.items
+                let host = NSHostingView(rootView: SynologyPhotosView(model: model)
+                    .environment(MacAppearanceStore()).preferredColorScheme(scheme))
+                let window = attach(host, size: NSSize(width: 1100, height: 800))
+                defer { model.cancel(); window.contentView = nil; window.close() }
+                window.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true)
+                try await settle(host)
+                func cell(_ index: Int) throws -> UIElement {
+                    try XCTUnwrap(remoteFlowElements(host).first { $0.accessibilityRole() == .button &&
+                        $0.accessibilityLabel() == items[index].filename })
+                }
+                func clickCell(_ index: Int, flags: NSEvent.ModifierFlags = [], count: Int = 1) throws {
+                    let rect = try cell(index).accessibilityFrame()
+                    let point = window.convertPoint(fromScreen: .init(x: rect.midX, y: rect.midY))
+                    for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
+                        let event = try XCTUnwrap(NSEvent.mouseEvent(with: type, location: point, modifierFlags: flags,
+                            timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber,
+                            context: nil, eventNumber: 0, clickCount: count, pressure: type == .leftMouseDown ? 1 : 0))
+                        NSApp.sendEvent(event)
+                    }
+                }
+                XCTAssertFalse(model.isSelecting)
+                XCTAssertTrue(model.selectedPhotoIDs.isEmpty)
+                try clickCell(0); try await settle(host)
+                XCTAssertEqual(model.selectedPhotoIDs, [items[0].id]); XCTAssertNil(model.previewPhoto)
+                try clickCell(1); try await settle(host)
+                XCTAssertEqual(model.selectedPhotoIDs, [items[1].id])
+                try clickCell(0, flags: .command); try await settle(host)
+                XCTAssertEqual(model.selectedPhotoIDs, Set(items.prefix(2).map(\.id)))
+                try clickCell(2, flags: .shift); try await settle(host)
+                XCTAssertEqual(model.selectedPhotoIDs, Set(items.prefix(3).map(\.id)))
+                let frames = try (0..<3).map { try cell($0).accessibilityFrame() }
+                let start = NSPoint(x: frames[2].maxX + 4, y: frames[0].maxY - 5)
+                let end = NSPoint(x: frames[1].minX + 5, y: frames[1].minY + 5)
+                XCTAssertFalse(try items.indices.contains { try cell($0).accessibilityFrame().contains(start) }, "框选应从照片间空白开始")
+                let input = try XCTUnwrap(nativeViews(host, of: FileGridMouseView.self).first)
+                XCTAssertTrue(input.visibleRect.contains(input.convert(window.convertPoint(fromScreen: start), from: nil)))
+                let rectangle = CGRect(x: min(start.x, end.x), y: min(start.y, end.y),
+                                       width: abs(start.x - end.x), height: abs(start.y - end.y))
+                let enclosed = Set(frames.indices.filter { frames[$0].intersects(rectangle) }.map { items[$0].id })
+                for step in 0...5 {
+                    let fraction = CGFloat(min(step, 4)) / 4
+                    let screenPoint = NSPoint(x: start.x + (end.x - start.x) * fraction,
+                                              y: start.y + (end.y - start.y) * fraction)
+                    let type: NSEvent.EventType = step == 0 ? .leftMouseDown : step == 5 ? .leftMouseUp : .leftMouseDragged
+                    let event = try XCTUnwrap(NSEvent.mouseEvent(with: type, location: window.convertPoint(fromScreen: screenPoint),
+                        modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber,
+                        context: nil, eventNumber: 0, clickCount: 1, pressure: step == 5 ? 0 : 1))
+                    NSApp.sendEvent(event); try await settle(host)
+                    if step == 4 { try snapshot(host, name: "photos-marquee-\(isAlbum ? "album" : "timeline")-\(language.rawValue)-\(scheme)") }
+                }
+                XCTAssertEqual(model.selectedPhotoIDs, enclosed)
+                XCTAssertNil(model.previewPhoto)
+                model.clearSelection(); try await settle(host)
+                func selectionAction(_ index: Int, key: String) throws {
+                    let actions = try XCTUnwrap(try cell(index).value("accessibilityCustomActions") as? [NSAccessibilityCustomAction])
+                    let action = try XCTUnwrap(actions.first { $0.name == L10n.string(key) })
+                    XCTAssertEqual(action.handler?(), true)
+                }
+                try selectionAction(0, key: "photos.selection.add"); try await settle(host)
+                try selectionAction(1, key: "photos.selection.add"); try await settle(host)
+                XCTAssertEqual(model.selectedPhotoIDs, Set(items.prefix(2).map(\.id)))
+                try selectionAction(0, key: "photos.selection.remove"); try await settle(host)
+                XCTAssertEqual(model.selectedPhotoIDs, [items[1].id])
+                try clickCell(0, count: 2); try await settle(host)
+                XCTAssertEqual(model.previewPhoto?.id, items[0].id)
+                model.closePreview()
+                }
             }
         }
     }

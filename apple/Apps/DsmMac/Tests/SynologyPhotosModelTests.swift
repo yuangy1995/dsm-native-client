@@ -4055,6 +4055,36 @@ final class SynologyPhotosModelTests: XCTestCase {
         XCTAssertFalse(model.isSelecting)
     }
 
+    func test桌面单击替换选择且组合键选择不会留下空多选状态() async {
+        let model = SynologyPhotosModel(repository: DatePhotoServiceStub(), pageSize: 6)
+        await model.refresh()
+        XCTAssertFalse(model.isSelecting)
+        model.selectPhoto(model.items[1])
+        model.selectPhoto(model.items[4])
+        XCTAssertEqual(model.selectedPhotos.map(\.id.unitID), [5])
+        model.selectPhoto(model.items[1], extending: true)
+        XCTAssertEqual(Set(model.selectedPhotos.map(\.id.unitID)), [2, 3, 4, 5])
+        model.selectPhoto(model.items[0], adding: true)
+        XCTAssertEqual(Set(model.selectedPhotos.map(\.id.unitID)), [1, 2, 3, 4, 5])
+        model.selectPhoto(model.items[0])
+        model.selectPhoto(model.items[0], adding: true)
+        XCTAssertTrue(model.selectedPhotoIDs.isEmpty)
+        XCTAssertFalse(model.isSelecting)
+    }
+
+    func test桌面框选只接纳当前照片且空白选择清空状态() async {
+        let model = SynologyPhotosModel(repository: DatePhotoServiceStub(), pageSize: 6)
+        await model.refresh()
+        var selection = Set(model.items.prefix(2).map(\.id))
+        selection.insert(.init(profileID: UUID(), space: .personal, unitID: 99))
+        model.selectPhotoIDs(selection)
+        XCTAssertEqual(model.selectedPhotos.map(\.id.unitID), [1, 2])
+        XCTAssertTrue(model.isSelecting)
+        model.selectPhotoIDs([])
+        XCTAssertTrue(model.selectedPhotoIDs.isEmpty)
+        XCTAssertFalse(model.isSelecting)
+    }
+
     func test批量删除自动核对保留月份并修正下一页偏移() async throws {
         let repository = DatePhotoServiceStub()
         let model = SynologyPhotosModel(repository: repository, pageSize: 2, deletionReviewDelay: { _ in })

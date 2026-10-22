@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		04BF49113047E6A5BFDD0565 /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = CB5D2FCD484E6C915A3AF4BB /* Localizable.strings */; };
+		05480CDFF4885A1CD41B7408 /* NasSystemUpdateModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1B4E5865D3D8E64F4A68BBA /* NasSystemUpdateModel.swift */; };
 		0AF59184A358D65C48DE8148 /* WorkspaceModuleAccess.swift in Sources */ = {isa = PBXBuildFile; fileRef = BAF4D2E52FE8FDEB013A449D /* WorkspaceModuleAccess.swift */; };
 		0BF65A78DC3488741ACAA862 /* DsmCore in Frameworks */ = {isa = PBXBuildFile; productRef = CDFB3D25D6035AB51E143261 /* DsmCore */; };
 		108966A1F81EFB36786F3660 /* MediaStreamRedirectPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = E6FC011F3531054EAFEB7F62 /* MediaStreamRedirectPolicy.swift */; };
@@ -63,6 +64,7 @@
 		B3DA7CC7D189932DEBFAA409 /* FileVFSCloudAuthorizationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 324BA0FE1CE13A86B87C527C /* FileVFSCloudAuthorizationView.swift */; };
 		B6FA5CB7DA8790CA0A105940 /* NasAdministrationModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF05BE448D0653B1A065559A /* NasAdministrationModel.swift */; };
 		B748536108879BA2D705F5CE /* MacAppearance.swift in Sources */ = {isa = PBXBuildFile; fileRef = DF1E6D2F66C1068D2E20A49C /* MacAppearance.swift */; };
+		BE6FDF4B6D46C68532211B9D /* NasSystemUpdateView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 241ED05DD7C98C42E5298205 /* NasSystemUpdateView.swift */; };
 		C050D98ED49CAFDBCBE9714A /* FileVFSViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = B826C3501E08204CDDCFFC02 /* FileVFSViews.swift */; };
 		C3AFE337248691D6883C0CE7 /* FilePreviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 852694B5E54505BB153EF98A /* FilePreviewView.swift */; };
 		C9E339D485378E1875A349E6 /* DesktopCloudDriveManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B3A50B5166E5AD3B95EA1CAA /* DesktopCloudDriveManager.swift */; };
@@ -127,6 +129,7 @@
 		20D1575DF13DD10E0CD1EC3A /* FileLocationPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileLocationPicker.swift; sourceTree = "<group>"; };
 		21F2702AC3558C7DD3F3EA25 /* LanStashFileProvider.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = LanStashFileProvider.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		226606003B75B91F9FA03683 /* zh-Hans */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = "zh-Hans.lproj/InfoPlist.strings"; sourceTree = "<group>"; };
+		241ED05DD7C98C42E5298205 /* NasSystemUpdateView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NasSystemUpdateView.swift; sourceTree = "<group>"; };
 		24234957C4C74E3D998F7CE0 /* PhotoOperationFeedback.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoOperationFeedback.swift; sourceTree = "<group>"; };
 		2578503BB6C863138963CE6B /* ServiceManagementModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServiceManagementModel.swift; sourceTree = "<group>"; };
 		2712B93FA47D4BCFAF3CDB1B /* SynologyPhotosView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SynologyPhotosView.swift; sourceTree = "<group>"; };
@@ -188,6 +191,7 @@
 		DF1E6D2F66C1068D2E20A49C /* MacAppearance.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacAppearance.swift; sourceTree = "<group>"; };
 		E6FC011F3531054EAFEB7F62 /* MediaStreamRedirectPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaStreamRedirectPolicy.swift; sourceTree = "<group>"; };
 		EF1EB3904279ABE52505A57B /* ChatWorkspaceView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatWorkspaceView.swift; sourceTree = "<group>"; };
+		F1B4E5865D3D8E64F4A68BBA /* NasSystemUpdateModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NasSystemUpdateModel.swift; sourceTree = "<group>"; };
 		F4E9000C7AE089029FC7CC9D /* FileShareBatch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileShareBatch.swift; sourceTree = "<group>"; };
 		F69DD3E71DCD020D41515EDC /* OfficeDocumentEditingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OfficeDocumentEditingView.swift; sourceTree = "<group>"; };
 		F9F9356097F9C9523ED5CCE8 /* FileStationMountAccountList.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileStationMountAccountList.swift; sourceTree = "<group>"; };
@@ -300,6 +304,8 @@
 				E6FC011F3531054EAFEB7F62 /* MediaStreamRedirectPolicy.swift */,
 				BF05BE448D0653B1A065559A /* NasAdministrationModel.swift */,
 				3F276AF6EC0C343DF594E76B /* NasAdministrationView.swift */,
+				F1B4E5865D3D8E64F4A68BBA /* NasSystemUpdateModel.swift */,
+				241ED05DD7C98C42E5298205 /* NasSystemUpdateView.swift */,
 				1769392F5A94D9F749E5C0D1 /* OfficeDocumentEditing.swift */,
 				F69DD3E71DCD020D41515EDC /* OfficeDocumentEditingView.swift */,
 				34FD4C5D753F85BAD2C18CC8 /* OfficeDocumentPreview.swift */,
@@ -511,6 +517,8 @@
 				108966A1F81EFB36786F3660 /* MediaStreamRedirectPolicy.swift in Sources */,
 				B6FA5CB7DA8790CA0A105940 /* NasAdministrationModel.swift in Sources */,
 				3679216DDA49A20D83B8411A /* NasAdministrationView.swift in Sources */,
+				05480CDFF4885A1CD41B7408 /* NasSystemUpdateModel.swift in Sources */,
+				BE6FDF4B6D46C68532211B9D /* NasSystemUpdateView.swift in Sources */,
 				441AF1825FA0812DDFC6AA03 /* OfficeDocumentEditing.swift in Sources */,
 				594AFC19D37245019FAA3E1C /* OfficeDocumentEditingView.swift in Sources */,
 				D42D3EED63F88A4010CE8666 /* OfficeDocumentPreview.swift in Sources */,
@@ -574,7 +582,7 @@
 				CODE_SIGN_ENTITLEMENTS = SupportingFiles/DsmFileProvider.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 27;
+				CURRENT_PROJECT_VERSION = 28;
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = "SupportingFiles/DsmFileProvider-Info.plist";
@@ -583,7 +591,7 @@
 					"@executable_path/../Frameworks",
 					"@executable_path/../../../../Frameworks",
 				);
-				MARKETING_VERSION = 1.0.17;
+				MARKETING_VERSION = 1.0.18;
 				PRODUCT_BUNDLE_IDENTIFIER = "$(LANSTASH_MAC_FILE_PROVIDER_BUNDLE_ID)";
 				PRODUCT_NAME = LanStashFileProvider;
 				SDKROOT = macosx;
@@ -667,7 +675,7 @@
 				CODE_SIGN_ENTITLEMENTS = SupportingFiles/DsmMac.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 27;
+				CURRENT_PROJECT_VERSION = 28;
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = SupportingFiles/Info.plist;
@@ -675,7 +683,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 1.0.17;
+				MARKETING_VERSION = 1.0.18;
 				PRODUCT_BUNDLE_IDENTIFIER = "$(LANSTASH_MAC_APP_BUNDLE_ID)";
 				PRODUCT_NAME = LanStash;
 				SDKROOT = macosx;
@@ -690,7 +698,7 @@
 				CODE_SIGN_ENTITLEMENTS = SupportingFiles/DsmMac.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 27;
+				CURRENT_PROJECT_VERSION = 28;
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = SupportingFiles/Info.plist;
@@ -698,7 +706,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 1.0.17;
+				MARKETING_VERSION = 1.0.18;
 				PRODUCT_BUNDLE_IDENTIFIER = "$(LANSTASH_MAC_APP_BUNDLE_ID)";
 				PRODUCT_NAME = LanStash;
 				SDKROOT = macosx;
@@ -774,7 +782,7 @@
 				CODE_SIGN_ENTITLEMENTS = SupportingFiles/DsmFileProvider.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 27;
+				CURRENT_PROJECT_VERSION = 28;
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = "SupportingFiles/DsmFileProvider-Info.plist";
@@ -783,7 +791,7 @@
 					"@executable_path/../Frameworks",
 					"@executable_path/../../../../Frameworks",
 				);
-				MARKETING_VERSION = 1.0.17;
+				MARKETING_VERSION = 1.0.18;
 				PRODUCT_BUNDLE_IDENTIFIER = "$(LANSTASH_MAC_FILE_PROVIDER_BUNDLE_ID)";
 				PRODUCT_NAME = LanStashFileProvider;
 				SDKROOT = macosx;

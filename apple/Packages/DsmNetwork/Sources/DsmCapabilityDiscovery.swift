@@ -142,6 +142,9 @@ public enum DsmAPIName {
     public static let coreEventScheduler = "SYNO.Core.EventScheduler"
     /// DSM 系统更新检查内部接口；客户端只读取可用更新，不执行下载或安装。
     public static let coreUpgradeServer = "SYNO.Core.Upgrade.Server"
+    public static let coreUpgrade = "SYNO.Core.Upgrade"
+    public static let coreUpgradeDownload = "SYNO.Core.Upgrade.Server.Download"
+    public static let haUpgrade = "SYNO.SHA.Upgrade"
     public static let coreUser = "SYNO.Core.User"
     public static let coreGroup = "SYNO.Core.Group"
     public static let coreCurrentConnection = "SYNO.Core.CurrentConnection"
@@ -339,6 +342,9 @@ public struct DsmCapabilityDiscovery: Sendable {
         DsmAPIName.coreTaskScheduler,
         DsmAPIName.coreEventScheduler,
         DsmAPIName.coreUpgradeServer,
+        DsmAPIName.coreUpgrade,
+        DsmAPIName.coreUpgradeDownload,
+        DsmAPIName.haUpgrade,
         DsmAPIName.coreUser,
         DsmAPIName.coreGroup,
         DsmAPIName.coreCurrentConnection,
@@ -567,6 +573,9 @@ public struct DsmCapabilityDiscovery: Sendable {
         DsmAPIName.coreTaskScheduler: 1...4,
         DsmAPIName.coreEventScheduler: 1...1,
         DsmAPIName.coreUpgradeServer: 1...4,
+        DsmAPIName.coreUpgrade: 1...1,
+        DsmAPIName.coreUpgradeDownload: 2...2,
+        DsmAPIName.haUpgrade: 1...1,
         DsmAPIName.coreUser: 1...1,
         DsmAPIName.coreGroup: 1...1,
         DsmAPIName.coreCurrentConnection: 1...1,
