@@ -182,15 +182,20 @@ final class MobileFilesProviderUITests: XCTestCase {
                 let edit = app.buttons.matching(NSPredicate(format: "label IN %@", ["Edit Sidebar", "编辑边栏", "Edit", "编辑"])).firstMatch
                 XCTAssertTrue(edit.waitForExistence(timeout: 5), app.debugDescription); edit.tap()
                 // 系统未给位置开关独立标识，按同一行的实际坐标匹配，不能误触其他位置。
-                let locationSwitch = app.switches.allElementsBoundByIndex.first {
-                    abs($0.frame.midY - provider.frame.midY) < 2
+                func locationSwitch() -> XCUIElement? {
+                    // 系统 AX 索引可能在状态改变后更新；每次按本位置行重新定位。
+                    let rowY = provider.frame.midY
+                    return app.switches.allElementsBoundByIndex.first { abs($0.frame.midY - rowY) < 2 }
                 }
-                XCTAssertNotNil(locationSwitch, app.debugDescription)
-                if let locationSwitch {
-                    // 同时验证用户可以从系统关闭再开启本测试位置，不触碰其他提供器。
-                    if locationSwitch.value as? String == "1" { locationSwitch.tap(); waitValue(locationSwitch, "0", in: app) }
-                    locationSwitch.tap(); waitValue(locationSwitch, "1", in: app)
+                guard let current = locationSwitch() else { XCTFail("无法定位本提供器的系统开关"); return }
+                if current.value as? String == "1" {
+                    current.tap()
+                    waitValue(current, "0", in: app)
                 }
+                guard let enabling = locationSwitch() else { XCTFail("关闭后无法重新定位本提供器开关"); return }
+                XCTAssertTrue(enabling.isHittable)
+                enabling.press(forDuration: 0.15)
+                waitValue(enabling, "1", in: app)
                 app.buttons.matching(NSPredicate(format: "label IN %@", ["Done", "完成"])).firstMatch.tap()
             }
             screenshot(app, "files-native-locations")

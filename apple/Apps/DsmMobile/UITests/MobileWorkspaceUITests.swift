@@ -359,8 +359,19 @@ final class MobileWorkspaceUITests: XCTestCase {
             thenDragTo: origin.withOffset(CGVector(dx: frame.midX, dy: frame.minY + height * 0.25)))
     }
     private func beginPhotoDeletion(in app: XCUIApplication) {
-        element("mobile.photos.selection.actions", in: app).tap(); element("mobile.photos.selection.delete", in: app).tap()
-        XCTAssertTrue(app.alerts.firstMatch.waitForExistence(timeout: 8))
+        let menu = element("mobile.photos.selection.actions", in: app)
+        XCTAssertTrue(menu.wait(for: \.isHittable, toEqual: true, timeout: 8))
+        menu.tap()
+        let delete = element("mobile.photos.selection.delete", in: app)
+        XCTAssertTrue(delete.wait(for: \.isHittable, toEqual: true, timeout: 8))
+        XCTAssertTrue(delete.isEnabled)
+        delete.tap()
+        let confirmation = app.alerts.firstMatch
+        if !confirmation.waitForExistence(timeout: 8) {
+            let attachment = XCTAttachment(string: app.debugDescription)
+            attachment.name = "Photo deletion confirmation hierarchy"; add(attachment)
+        }
+        XCTAssertTrue(confirmation.exists)
     }
 
     func test人物显示隐藏与主题搜索() {
