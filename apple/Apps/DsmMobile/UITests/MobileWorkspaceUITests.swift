@@ -841,10 +841,22 @@ final class MobileWorkspaceUITests: XCTestCase {
         element("mobile.photos.preferences.grouping", in: app).tap(); app.buttons["按月"].tap()
         let info = app.switches["mobile.photos.preferences.info"]
         for _ in 0..<3 where !info.isHittable { app.swipeUp() }
-        info.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.5)).tap()
+        XCTAssertTrue(info.isHittable)
+        // 测试目标是“默认显示资料”，不能把已开启的开关再切回关闭。
+        if info.value as? String == "0" {
+            info.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.5)).tap()
+        }
+        XCTAssertEqual(info.value as? String, "1")
         attachScreenshot(app, name: "照片显示设置")
-        app.buttons["mobile.photos.preferences.save"].tap(); XCTAssertTrue(app.staticTexts["操作已完成。"].waitForExistence(timeout: 20))
-        app.buttons["Sample 1.jpg"].tap(); XCTAssertTrue(app.staticTexts["拍摄时间"].waitForExistence(timeout: 5))
+        let save = app.buttons["mobile.photos.preferences.save"]
+        XCTAssertTrue(save.isEnabled); save.tap()
+        XCTAssertTrue(app.staticTexts["操作已完成。"].waitForExistence(timeout: 20))
+        XCTAssertTrue(element("mobile.photos.preferences.grouping", in: app).waitForNonExistence(timeout: 8))
+        let photo = app.buttons["Sample 1.jpg"]
+        XCTAssertTrue(photo.waitForExistence(timeout: 8)); photo.tap()
+        // 资料行合并了标题和值，辅助功能树不再有单独的“拍摄时间”StaticText。
+        let taken = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", "拍摄时间")).firstMatch
+        XCTAssertTrue(taken.waitForExistence(timeout: 8))
         attachScreenshot(app, name: "照片预览默认显示资料")
     }
 

@@ -348,6 +348,15 @@ final class MobileServiceSettingsUITests: XCTestCase {
     func test中文大字内存与电源确认可取消() {
         for kind in ["zram", "powerSchedule"] {
             let app = launch("nas-services", kind: kind, chinese: true, large: true)
+            if app.frame.width > 600 {
+                // iPad 侧栏首次点击有时仅完成触控而未切换选区；只在选区未变化时补一次只读导航。
+                let page = app.buttons["mobile.nas.page.\(kind)"]
+                if !page.wait(for: \.isSelected, toEqual: true, timeout: 5) {
+                    XCTAssertTrue(page.isHittable); page.tap()
+                }
+                XCTAssertTrue(page.wait(for: \.isSelected, toEqual: true, timeout: 8))
+            }
+            XCTAssertTrue(app.collectionViews["mobile.nas.service.list"].waitForExistence(timeout: 15))
             openEditor(app)
             if kind == "zram" { reveal("mobile.nas.power.compression", in: app).switches.firstMatch.tap() }
             else { reveal("mobile.nas.power.add", in: app).tap(); screenshot(app, "Chinese large power schedule entry editor"); applyPowerEntry(app) }
