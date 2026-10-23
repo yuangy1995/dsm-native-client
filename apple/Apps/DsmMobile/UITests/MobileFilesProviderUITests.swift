@@ -229,6 +229,23 @@ final class MobileFilesProviderUITests: XCTestCase {
                 location.press(forDuration: 0.15)
             }
         }
+        // 系统文件应用曾在选中提供器后仍停留“我的 iPhone”空目录。
+        // 只在确认实际落入本机目录且共享文件夹不存在时，返回位置列表并重新选择同一提供器。
+        let localStorageRoot = app.descendants(matching: .any).matching(NSPredicate(
+            format: "identifier BEGINSWITH %@", "DOC.browsingRoot Source: com.apple.FileProvider.LocalStorage")).firstMatch
+        if !sharedFolder(in: app).waitForExistence(timeout: 20), localStorageRoot.exists {
+            MobileUITestNavigation.capture(app, name: "Files location remained in local storage", test: self)
+            let back = app.navigationBars.buttons.matching(NSPredicate(
+                format: "label IN %@", ["Browse", "浏览"])).firstMatch
+            XCTAssertTrue(back.wait(for: \.isHittable, toEqual: true, timeout: 8), app.debugDescription)
+            back.press(forDuration: 0.15)
+            let selected = app.descendants(matching: .any).matching(NSPredicate(
+                format: "identifier IN %@", identifiers)).firstMatch
+            XCTAssertTrue(selected.wait(for: \.isHittable, toEqual: true, timeout: 8), app.debugDescription)
+            selected.press(forDuration: 0.15)
+        }
+        // 仍要求真正进入系统 File Provider 目录，不以点过位置项替代内容验收。
+        XCTAssertTrue(sharedFolder(in: app).waitForExistence(timeout: 20), app.debugDescription)
     }
 
     private func tapSwitch(_ row: XCUIElement) {

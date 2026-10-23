@@ -135,7 +135,10 @@ enum MobileUITestNavigation {
     private static func revealModule(_ toggle: XCUIElement, in app: XCUIApplication) {
         let settings = app.collectionViews["mobile.settings.page"]
         for _ in 0..<8 {
-            if toggle.exists && toggle.isHittable { return }
+            // 外层 SwiftUI 开关行可命中，并不代表其中接收触控的原生 Switch 已在屏幕内。
+            // 须同时核对实际控件，避免在不可操作的子控件上耗尽 XCTest 查询时间。
+            let control = toggle.switches.firstMatch
+            if toggle.exists && toggle.isHittable && control.exists && control.isHittable { return }
             settings.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.8)).press(forDuration: 0.1,
                 thenDragTo: settings.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.3)),
                 withVelocity: .slow, thenHoldForDuration: 0.2)
