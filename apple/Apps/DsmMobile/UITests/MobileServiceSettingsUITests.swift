@@ -639,7 +639,20 @@ final class MobileServiceSettingsUITests: XCTestCase {
     private func openEthernetEditor(_ app: XCUIApplication) {
         reveal("mobile.nas.ethernet.edit.eth0", in: app).tap(); XCTAssertTrue(app.buttons["mobile.nas.service.save"].waitForExistence(timeout: 5))
     }
-    private func openEditor(_ app: XCUIApplication) { reveal("mobile.nas.service.edit", in: app).tap(); XCTAssertTrue(app.buttons["mobile.nas.service.save"].waitForExistence(timeout: 5)) }
+    private func openEditor(_ app: XCUIApplication) {
+        let edit = reveal("mobile.nas.service.edit", in: app)
+        edit.tap()
+        let save = app.buttons["mobile.nas.service.save"]
+        if !save.waitForExistence(timeout: 5) {
+            MobileUITestNavigation.capture(app, name: "Service editor first presentation", test: self)
+            // 云端已出现编辑按钮收到触控但表单未打开；仅在仍停留列表时补一次无写入的导航。
+            if !app.collectionViews["mobile.nas.service.editor"].exists,
+               edit.exists && edit.isEnabled && edit.isHittable {
+                edit.press(forDuration: 0.15)
+            }
+        }
+        XCTAssertTrue(save.waitForExistence(timeout: 5))
+    }
     private func toggle(_ key: String, in app: XCUIApplication) { reveal("mobile.nas.service.\(key)", in: app).switches.firstMatch.tap() }
     private func replace(_ key: String, text: String, _ app: XCUIApplication, prefix: String = "mobile.nas.service", separateLabel: Bool = false, clearAtEnd: Bool = false) {
         let field = app.textFields["\(prefix).\(key)"]; _ = reveal("\(prefix).\(key)", in: app)

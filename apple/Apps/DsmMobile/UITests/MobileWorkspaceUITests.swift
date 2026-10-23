@@ -2635,9 +2635,31 @@ final class MobileWorkspaceUITests: XCTestCase {
             return
         }
         let overflow = app.navigationBars.buttons["OverflowBarButtonItem"].firstMatch
-        // 原生溢出菜单保留动作标题，不保留原 ToolbarItem 的标识。
-        let more = app.buttons.matching(NSPredicate(format: "label IN %@", ["More", "更多"])).firstMatch
-        guard MobileUITestNavigation.openMenu(overflow, showing: more, in: app, test: self) else { return }
+        let ready = overflow.wait(for: \.isHittable, toEqual: true, timeout: 10)
+        if !ready { MobileUITestNavigation.capture(app, name: "Files toolbar overflow", test: self) }
+        XCTAssertTrue(ready, "文件工具栏溢出入口尚未可操作")
+        guard ready else { return }
+        overflow.tap()
+        // 原生溢出菜单保留动作标题但丢失标识；全局 firstMatch 可能命中底部标签栏的同名“More”。
+        func visibleMore() -> XCUIElement? {
+            let tab = app.tabBars.firstMatch
+            let tabTop = tab.exists ? tab.frame.minY : app.frame.maxY
+            return app.buttons.matching(NSPredicate(format: "label IN %@", ["More", "更多"]))
+                .allElementsBoundByIndex.first { candidate in
+                    let frame = candidate.frame
+                    return frame.origin.x.isFinite && frame.origin.y.isFinite
+                        && frame.width.isFinite && frame.height.isFinite
+                        && frame.width > 0 && frame.height > 0
+                        && frame.midY < tabTop && candidate.isHittable
+                }
+        }
+        let presented = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            visibleMore() != nil
+        }, object: app)
+        let appeared = XCTWaiter.wait(for: [presented], timeout: 10) == .completed
+        if !appeared { MobileUITestNavigation.capture(app, name: "Files overflow More item", test: self) }
+        XCTAssertTrue(appeared, "文件溢出菜单中没有可操作的 More 项")
+        guard appeared, let more = visibleMore() else { return }
         MobileUITestNavigation.openMenu(more, showing: contents, in: app, test: self)
     }
 

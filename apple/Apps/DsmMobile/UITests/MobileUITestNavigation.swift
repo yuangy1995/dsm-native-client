@@ -28,7 +28,16 @@ enum MobileUITestNavigation {
         // 开启聊天会插入通知区域；大字号下原开关会移出可见列表，先滚回原控件再读取新值。
         revealModule(toggle, in: app)
         let enabled = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", "1"), object: toggle)
-        let result = XCTWaiter.wait(for: [enabled], timeout: 10)
+        var result = XCTWaiter.wait(for: [enabled], timeout: 10)
+        if result != .completed {
+            capture(app, name: "Enable \(module) initial gesture", test: test)
+            // 首次滑动未改变本地功能开关时，先核实仍为关闭再补一次原生点击；绝不盲目反向切换。
+            revealModule(toggle, in: app)
+            if toggle.value as? String == "0", control.exists, control.isEnabled, control.isHittable {
+                control.tap()
+                result = XCTWaiter.wait(for: [enabled], timeout: 10)
+            }
+        }
         if result != .completed { capture(app, name: "Enable \(module)", test: test) }
         XCTAssertEqual(result, .completed, "功能开关没有开启：\(module)", file: file, line: line)
     }
