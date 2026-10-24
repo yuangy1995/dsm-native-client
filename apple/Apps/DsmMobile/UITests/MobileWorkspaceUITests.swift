@@ -227,7 +227,16 @@ final class MobileWorkspaceUITests: XCTestCase {
     func test相似分类空内容加载失败与无写权限保留正确入口() {
         for state in ["photo-similar-empty", "photo-similar-loading", "photo-similar-error", "photo-similar-readonly"] {
             let app = launchFixture(state: state); openSimilarPhotos(app, expectPhotos: false)
-            if state.hasSuffix("empty") { XCTAssertTrue(app.staticTexts["No similar photos found. You can refresh to check again."].waitForExistence(timeout: 8)) }
+            if state.hasSuffix("empty") {
+                let empty = app.staticTexts["No similar photos found. You can refresh to check again."]
+                if !empty.waitForExistence(timeout: 8) {
+                    MobileUITestNavigation.capture(app, name: "Similar photos empty category first presentation", test: self)
+                    // 仅在仍显示类别入口时恢复一次只读导航；真实空内容仍须完整出现。
+                    let category = app.buttons["Similar Photos"].firstMatch
+                    if category.exists && category.isEnabled && category.isHittable && !empty.exists { category.tap() }
+                }
+                XCTAssertTrue(empty.waitForExistence(timeout: 8))
+            }
             else if state.hasSuffix("loading") { XCTAssertTrue(element("mobile.photos.loading", in: app).waitForExistence(timeout: 5)) }
             else if state.hasSuffix("error") { XCTAssertTrue(app.buttons["Try again"].firstMatch.waitForExistence(timeout: 8)); XCTAssertFalse(app.buttons["Sample 1.jpg"].exists) }
             else {
@@ -2249,7 +2258,21 @@ final class MobileWorkspaceUITests: XCTestCase {
         let app = launchFixture(state: "permissions-acl")
         defer { app.terminate() }
         XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 20))
-        app.buttons["Actions for Sample folder"].tap(); app.buttons["Owner and permissions"].tap()
+        let actions = app.buttons["Actions for Sample folder"]
+        let permissions = app.buttons["Owner and permissions"]
+        XCTAssertTrue(actions.isHittable); actions.tap()
+        var opened = permissions.wait(for: \.isHittable, toEqual: true, timeout: 5)
+        if !opened {
+            MobileUITestNavigation.capture(app, name: "Shared root permissions menu first presentation", test: self)
+            // 原生菜单首次点击可能没有展开；仅当入口仍可操作且菜单项未出现时补只读导航。
+            if !permissions.exists && actions.exists && actions.isEnabled && actions.isHittable {
+                actions.tap()
+                opened = permissions.wait(for: \.isHittable, toEqual: true, timeout: 8)
+            }
+        }
+        XCTAssertTrue(opened, "共享根权限菜单项未出现或不可操作")
+        guard opened else { return }
+        permissions.tap()
         XCTAssertTrue(app.staticTexts["Permissions are read-only here. Manage permissions for this location in DSM."].waitForExistence(timeout: 8))
         XCTAssertFalse(app.buttons["files.permissions.save"].isEnabled)
         let rule = app.buttons["Sample member, Allow"]

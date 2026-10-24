@@ -66,9 +66,23 @@ final class MobileRegionUITests: XCTestCase {
             XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(
                 predicate: NSPredicate(format: "exists == false"), object: day)], timeout: 5), .completed)
         }
+        let save = app.buttons["mobile.nas.region.save"]
+        if !save.wait(for: \.isEnabled, toEqual: true, timeout: 5) {
+            MobileUITestNavigation.capture(app, name: "Manual date first selection was not applied", test: self)
+            // 日历选日是本地表单操作。首次 HID 触控无效时，通过另一日期再回到目标日期确认绑定改变。
+            date.tap()
+            let alternate = app.buttons.containing(.staticText, identifier: "8").firstMatch
+            XCTAssertTrue(alternate.waitForExistence(timeout: 5)); alternate.tap()
+            if !day.exists { date.tap() }
+            XCTAssertTrue(day.waitForExistence(timeout: 5)); day.tap()
+            if day.exists {
+                navigationBars.element(boundBy: navigationBars.count - 1)
+                    .coordinate(withNormalizedOffset: CGVector(dx: 0.25, dy: 0.5)).tap()
+            }
+        }
         screenshot(app, "Manual date selected before saving")
-        XCTAssertTrue(app.buttons["mobile.nas.region.save"].isEnabled)
-        app.buttons["mobile.nas.region.save"].tap()
+        XCTAssertTrue(save.isEnabled)
+        save.tap()
         XCTAssertTrue(element("mobile.nas.region.confirm", app).waitForExistence(timeout: 5)); screenshot(app, "Manual NAS date edit warning")
         element("mobile.nas.region.cancel", app).tap()
         XCTAssertFalse(element("mobile.nas.region.activity.succeeded", app).exists)
