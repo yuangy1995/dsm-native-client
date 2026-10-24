@@ -209,13 +209,19 @@ final class MobileFilesProviderUITests: XCTestCase {
         location.tap()
         // 系统选择器可能再次要求启用本测试提供器；只处理已观察到的专属确认。
         let activation = app.alerts["Turn On “LanStash”?"]
-        // 系统启用提示在点击位置后可能晚于 3 秒出现；未及时处理会遮挡后续共享目录查找。
-        if activation.waitForExistence(timeout: 15) {
+        // 系统启用确认可能在首次选中和导航恢复后的再次选中分别出现。
+        // 只响应实际存在的本提供器专属提示；每次提示只确认一次，不重发其他写操作。
+        func acceptActivation(ifPresentedWithin timeout: TimeInterval) -> Bool {
+            guard activation.waitForExistence(timeout: timeout) else { return false }
             let turnOn = activation.buttons["Turn On"]
             XCTAssertTrue(turnOn.isEnabled); XCTAssertTrue(turnOn.isHittable)
             screenshot(app, "files-system-picker-enable-confirmation")
             turnOn.press(forDuration: 0.15)
-            XCTAssertTrue(activation.waitForNonExistence(timeout: 5), app.debugDescription)
+            let dismissed = activation.waitForNonExistence(timeout: 5)
+            XCTAssertTrue(dismissed, app.debugDescription)
+            return dismissed
+        }
+        if acceptActivation(ifPresentedWithin: 15) {
             // 启用后的系统导航可能仍在进行；先检查目录，避免用旧页面坐标点击正在变化的位置列表。
             if !sharedFolder(in: app).waitForExistence(timeout: 8) {
                 MobileUITestNavigation.capture(app, name: "Files enabled location navigation", test: self)
@@ -227,6 +233,8 @@ final class MobileFilesProviderUITests: XCTestCase {
                 }
                 XCTAssertTrue(location.wait(for: \.isHittable, toEqual: true, timeout: 5), app.debugDescription)
                 location.press(forDuration: 0.15)
+                // 恢复导航重新选择位置后，系统可能再次弹出独立的开启提示。
+                _ = acceptActivation(ifPresentedWithin: 5)
             }
         }
         // 系统文件应用曾在选中提供器后仍停留“我的 iPhone”空目录。
@@ -243,6 +251,8 @@ final class MobileFilesProviderUITests: XCTestCase {
                 format: "identifier IN %@", identifiers)).firstMatch
             XCTAssertTrue(selected.wait(for: \.isHittable, toEqual: true, timeout: 8), app.debugDescription)
             selected.press(forDuration: 0.15)
+            // #448 的失败层级明确显示此时仍有“Turn On LanStash”系统弹窗遮挡共享目录。
+            _ = acceptActivation(ifPresentedWithin: 5)
         }
         // 仍要求真正进入系统 File Provider 目录，不以点过位置项替代内容验收。
         XCTAssertTrue(sharedFolder(in: app).waitForExistence(timeout: 20), app.debugDescription)
