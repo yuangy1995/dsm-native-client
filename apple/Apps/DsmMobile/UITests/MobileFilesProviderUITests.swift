@@ -151,7 +151,7 @@ final class MobileFilesProviderUITests: XCTestCase {
     private func openLocation(_ app: XCUIApplication, enable: Bool = false) {
         let sidebar = app.buttons["ToggleSideBar"]
         let identifiers = ["DOC.sidebar.item.岚仓", "DOC.sidebar.item.LanStash", "DOC.sidebar.item.Sample NAS"]
-        let provider = app.descendants(matching: .any).matching(NSPredicate(format: "identifier IN %@", identifiers)).firstMatch
+        let provider = app.cells.matching(NSPredicate(format: "identifier IN %@", identifiers)).firstMatch
         let ready = app.descendants(matching: .any).matching(NSPredicate(
             format: "identifier IN %@ OR (elementType == %d AND label IN %@)",
             identifiers, XCUIElement.ElementType.button.rawValue, ["Browse", "浏览"])).firstMatch
@@ -159,7 +159,16 @@ final class MobileFilesProviderUITests: XCTestCase {
         let navigation = app.descendants(matching: .any).matching(NSPredicate(
             format: "identifier IN %@ OR (elementType == %d AND label IN %@)",
             identifiers + ["ToggleSideBar"], XCUIElement.ElementType.button.rawValue, ["Browse", "浏览"])).firstMatch
-        XCTAssertTrue(navigation.waitForExistence(timeout: 60), app.debugDescription)
+        // iPhone 的系统选取器曾停在“最近项目”，底部实际有“浏览”按钮，
+        // 但复合 AX 谓词未命中该按钮；按原生标签进入位置列表后再核验提供器。
+        if !navigation.waitForExistence(timeout: 8) {
+            let browseTab = app.tabBars.buttons.matching(NSPredicate(
+                format: "label IN %@", ["Browse", "浏览"])).firstMatch
+            XCTAssertTrue(browseTab.waitForExistence(timeout: 8), app.debugDescription)
+            XCTAssertTrue(browseTab.isHittable, app.debugDescription)
+            if !browseTab.isSelected { browseTab.tap() }
+            XCTAssertTrue(provider.waitForExistence(timeout: 25), app.debugDescription)
+        }
         if sidebar.exists { sidebar.tap() }
         for _ in 0..<3 {
             let back = app.navigationBars.buttons.matching(NSPredicate(format: "label IN %@", ["Browse", "浏览"])).firstMatch
@@ -207,6 +216,17 @@ final class MobileFilesProviderUITests: XCTestCase {
             location = name
         }
         location.tap()
+        // iPad 的内嵌“文件”选择器曾在首次点击本提供器后仍选中 Recents。
+        // 仅当真实目录未出现、Recents 仍选中且提供器可点击时，补一次只读位置选择。
+        if !sharedFolder(in: app).waitForExistence(timeout: 8) {
+            let recents = app.cells["DOC.sidebar.item.Recents"]
+            if recents.exists && recents.isSelected &&
+                provider.exists && !provider.isSelected && provider.isHittable &&
+                !app.alerts["Turn On “LanStash”?"].exists {
+                MobileUITestNavigation.capture(app, name: "Files picker stayed on Recents", test: self)
+                provider.press(forDuration: 0.15)
+            }
+        }
         // 系统选择器可能再次要求启用本测试提供器；只处理已观察到的专属确认。
         let activation = app.alerts["Turn On “LanStash”?"]
         // 系统启用确认可能在首次选中和导航恢复后的再次选中分别出现。
