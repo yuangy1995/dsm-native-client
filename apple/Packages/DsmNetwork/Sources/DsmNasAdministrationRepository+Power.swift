@@ -47,7 +47,7 @@ extension DsmNasAdministrationRepository {
                 diagnosticTag: "\(prefix).unsupported"
             )
         }
-        guard !isPowerActionActive else {
+        guard !isPowerActionActive, !systemUpdateRequestActive, !systemUpdateWasSubmitted else {
             return try powerMutationResult(
                 status: .confirmedFailure,
                 operation: operation,

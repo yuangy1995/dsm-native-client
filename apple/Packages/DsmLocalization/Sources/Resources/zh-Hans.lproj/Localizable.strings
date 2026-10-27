@@ -7474,3 +7474,46 @@
 "photos.rotation.failed" = "旋转未能保存，已恢复原方向。请重试。";
 "photos.rotation.pending" = "旋转尚未完成保存。请恢复连接后重试刷新状态。";
 "photos.download.saving" = "正在下载照片…";
+
+"photos.selection.clear" = "取消选择";
+"photos.mediaType.live" = "实况照片";
+"photos.mediaType.motion" = "动态照片";
+"photos.mediaType.video" = "视频";
+"photos.mediaType.burst" = "连拍";
+"photos.mediaType.photo" = "照片";
+"photos.mediaType.other" = "媒体";
+"photos.selection.description" = "%1$@，%2$@";
+
+"system-update.title" = "DSM 更新";
+"system-update.close" = "关闭";
+"system-update.current-version" = "当前版本";
+"system-update.target-version" = "目标版本";
+"system-update.progress" = "已完成 %d%%";
+"system-update.refresh" = "重新检查状态";
+"system-update.download" = "下载更新";
+"system-update.install" = "安装并更新 NAS";
+"system-update.confirm-title" = "安装 DSM 更新？";
+"system-update.confirm-detail" = "将安装 %@。NAS 可能重启，文件传输和其他服务将暂时中断。请先完成正在进行的工作，并确保电源稳定。安装开始后不能取消。";
+"system-update.phase.checking" = "正在检查更新";
+"system-update.phase.current" = "DSM 已是最新版本";
+"system-update.phase.available" = "有可用更新";
+"system-update.phase.downloading" = "正在下载更新";
+"system-update.phase.ready" = "更新已下载";
+"system-update.phase.installing" = "正在安装更新";
+"system-update.phase.reconnecting" = "等待 NAS 恢复连接";
+"system-update.phase.completed" = "更新完成，已确认新版本";
+"system-update.phase.attention" = "需要检查更新状态";
+"system-update.busy" = "NAS 正在处理系统操作，请稍后检查更新状态。";
+"system-update.changed" = "可用更新已发生变化，请重新检查后再安装。";
+"system-update.unavailable" = "NAS 当前不允许下载更新，请稍后重新检查，或到 DSM 的“更新和还原”查看原因。";
+"system-update.use-dsm" = "这项更新需要在 DSM 中继续。请打开 DSM 控制面板的“更新和还原”，查看额外提示并完成安装。";
+"system-update.status-unknown" = "暂时无法确认 NAS 的更新状态。请重新检查，或到 DSM 的“更新和还原”查看进度。";
+"system-update.submission-unknown" = "发送安装请求时连接中断，NAS 可能已开始安装。正在检查状态，请勿重复安装或关闭 NAS 电源。";
+"system-update.reconnecting-detail" = "安装或重启期间 NAS 可能暂时无法连接。恢复连接后会核对目标版本，请勿关闭 NAS 电源。";
+"system-update.installing-detail" = "进度来自 NAS。安装完成后可能重启；显示 100% 不代表 NAS 已恢复服务。";
+"system-update.wait-long" = "等待时间较长，尚未确认更新完成。请检查 NAS 是否已恢复，再重新检查状态或到 DSM 查看结果。";
+"system-update.sign-in" = "NAS 要求重新登录。请重新连接此 NAS，然后打开 DSM 更新核对当前版本；不要重复发起安装。";
+"system-update.read-failed" = "无法读取更新状态，请检查连接后重试。";
+
+"photos.selection.add" = "加入选择";
+"photos.selection.remove" = "取消选择此项";

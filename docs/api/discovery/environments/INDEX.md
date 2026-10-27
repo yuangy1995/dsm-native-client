@@ -295,3 +295,12 @@
 | 下载 | 官方网页使用 DownloadStation2，不能当公开 Task.list 的证据。应用公开 Task.list、Statistic.getinfo、Info.getconfig/getinfo、Schedule.getconfig、RSS.Site.list 均成功；活动/设置/RSS 分区 Available。随后使用用户原测试包的 Infrastructure DLL 做同会话只读对照，下载也成功，因此截图中的下载失败本次未稳定复现；数字字符串/null 兼容是独立的已知解析改进，不冒称实机根因 | read-verified |
 | VMM | 官方 Plan.list v2 成功返回 protect_ids=[]。旧包同会话保护分区 Failed，当前修复后公开虚拟机/主机/存储/网络/映像和内部保护六分区全部 Available | read-verified |
 </content>
+
+<a id="2026-10-22-dsm-update-observation"></a>
+## 2026-10-22 DSM 补丁更新观察
+
+环境：设备与既有 `lab-a` 的关系未确认，不建立或替换机器基线；同一已登录设备从 DSM `7.2.1-69057 Update 12` 更新为 `7.2.1-69057 Update 13`。日期 2026-10-22（北京时间）；连接 QuickConnect 直连 HTTPS；证书类别未独立核验；账号具备官方升级操作许可，具体账号不记录。相关组件 `dsm-core`，无独立套件版本，其他套件版本未读取。来源为用户指定的 Chrome 官方 DSM 页面及其必要请求；用户明确授权下载、安装和重启。
+
+证据：`behavior-verified` 仅覆盖官方在线单机补丁流程。下载由 0 到 54% 并进入 `ready_upgrade`；安装前 `status(feasibility_check=true)` 和驱动检查成功，用户确认后 `Upgrade.start` 返回成功空对象；安装进度观察到 5% 和 100%，随后服务断开、恢复、重新登录，官方“更新和还原”显示目标 Update 13 且已是最新版本。参数和状态唯一来源见[补丁更新端点](../endpoints/dsm-system-monitoring.md#dsm-system-update-install)。未保存原始 HAR、响应、地址、账号或凭据。
+
+`static`：2026-10-22 至 2026-10-23 的官方脚本复核显示大版本另需 `PreCheck.start`，高可用集群另有角色/进度检查，`hard/soft` 可行性提示不能跳过。`observed`：驱动检查请求成功，但完整返回字段未保留，不为其响应结构补造证据。原生 macOS 实际安装、断线/证书异常、其他 DSM/补丁、集群与大版本升级未验证。

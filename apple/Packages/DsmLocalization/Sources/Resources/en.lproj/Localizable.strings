@@ -7474,3 +7474,46 @@
 "photos.rotation.failed" = "Could not save the rotation. The previous orientation has been restored. Try again.";
 "photos.rotation.pending" = "The rotation has not finished saving. Reconnect, then try refreshing its status.";
 "photos.download.saving" = "Downloading photos…";
+
+"photos.selection.clear" = "Clear Selection";
+"photos.mediaType.live" = "Live Photo";
+"photos.mediaType.motion" = "Motion Photo";
+"photos.mediaType.video" = "Video";
+"photos.mediaType.burst" = "Burst";
+"photos.mediaType.photo" = "Photo";
+"photos.mediaType.other" = "Media";
+"photos.selection.description" = "%1$@, %2$@";
+
+"system-update.title" = "DSM Update";
+"system-update.close" = "Close";
+"system-update.current-version" = "Current version";
+"system-update.target-version" = "Target version";
+"system-update.progress" = "%d%% complete";
+"system-update.refresh" = "Check status";
+"system-update.download" = "Download update";
+"system-update.install" = "Install NAS update";
+"system-update.confirm-title" = "Install DSM update?";
+"system-update.confirm-detail" = "Install %@. The NAS may restart, interrupting file transfers and other services. Finish ongoing work and ensure a stable power supply. Installation cannot be cancelled once started.";
+"system-update.phase.checking" = "Checking for updates";
+"system-update.phase.current" = "DSM is up to date";
+"system-update.phase.available" = "Update available";
+"system-update.phase.downloading" = "Downloading update";
+"system-update.phase.ready" = "Update downloaded";
+"system-update.phase.installing" = "Installing update";
+"system-update.phase.reconnecting" = "Waiting for the NAS to reconnect";
+"system-update.phase.completed" = "Update complete; new version verified";
+"system-update.phase.attention" = "Update status needs attention";
+"system-update.busy" = "The NAS is handling a system operation. Check the update status again shortly.";
+"system-update.changed" = "The available update has changed. Check again before installing.";
+"system-update.unavailable" = "The NAS cannot download this update now. Check again later, or open Update & Restore in DSM for details.";
+"system-update.use-dsm" = "Continue this update in DSM. Open Control Panel > Update & Restore to review additional requirements and install it.";
+"system-update.status-unknown" = "The NAS update status could not be confirmed. Check again, or view progress in DSM > Update & Restore.";
+"system-update.submission-unknown" = "The connection was interrupted while sending the installation request. The NAS may have started installing. Checking status; do not repeat installation or power off the NAS.";
+"system-update.reconnecting-detail" = "The NAS may be unavailable during installation or restart. The target version will be checked after reconnection. Do not power off the NAS.";
+"system-update.installing-detail" = "Progress is reported by the NAS. A restart may follow installation; 100% does not mean services have resumed.";
+"system-update.wait-long" = "The update is taking longer than expected and completion is not yet confirmed. Check that the NAS is available, then check status again or review the result in DSM.";
+"system-update.sign-in" = "The NAS requires sign-in again. Reconnect to this NAS, then open DSM Update to check the installed version. Do not repeat installation.";
+"system-update.read-failed" = "The update status could not be read. Check your connection and try again.";
+
+"photos.selection.add" = "Add to Selection";
+"photos.selection.remove" = "Remove from Selection";

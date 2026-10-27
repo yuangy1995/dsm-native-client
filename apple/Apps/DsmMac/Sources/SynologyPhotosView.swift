@@ -25,8 +25,14 @@ struct SynologyPhotosView: View {
     @State private var showsAutomaticPreviewSettings = false
     @State private var showsDisplaySettings = false
     @State private var showsDuplicateSettings = false
-    @State private var showsPreviewRecovery = false
     @State private var thumbnailAnchor: SynologyPhotoID?
+    @State private var selectionFrames: [SynologyPhotoID: CGRect] = [:]
+    @State private var selectionExcludedFrames: [CGRect] = []
+    @State private var selectionStart: CGPoint?
+    @State private var selectionRectangle: CGRect?
+    @State private var selectionModifiers: NSEvent.ModifierFlags = []
+    @State private var selectionBase: Set<SynologyPhotoID> = []
+    @FocusState private var galleryHasFocus: Bool
     var onSectionChange: ((SynologyPhotosSection) -> Void)? = nil
     @Environment(\.colorScheme) private var scheme
     @Environment(\.colorSchemeContrast) private var contrast
@@ -92,10 +98,6 @@ struct SynologyPhotosView: View {
                 } label: { Image(systemName: "gearshape") }
                     .help(L10n.string("photos.settings.title")).accessibilityLabel(L10n.string("photos.settings.title"))
                     .disabled(model.isBrowsingBlocked || model.isLoading || (model.pendingMutationID != nil && !model.hasPendingAutomaticPreview))
-                Button { showsPreviewRecovery = true } label: { Image(systemName: "clock.arrow.circlepath") }
-                    .help(L10n.string("photos.preview.recovery.title"))
-                    .accessibilityLabel(L10n.string("photos.preview.recovery.title"))
-                    .disabled(!model.managementFeatures.contains(.previewRegeneration) || model.isManaging || model.isLoading || model.pendingMutationID != nil)
                 if let folder = model.currentCreationFolder {
                     Button {
                         managementSheet = .init(kind: .createFolder, photos: [], folder: folder, space: folder.space)
@@ -215,15 +217,17 @@ struct SynologyPhotosView: View {
                 HStack(spacing: 8) {
                     if model.section == .folders, !model.isSelecting { folderBreadcrumbs }
                     if !model.isSelecting { Spacer(minLength: 8) }
-                    Button {
-                        if model.isSelecting { model.clearSelection() } else { model.isSelecting = true }
-                    } label: {
-                        Label(L10n.string(model.isSelecting ? "photos.selection.cancel" : "photos.selection.start"), systemImage: "checkmark.circle")
+                    if model.section == .folders, !model.isSelecting, !model.collections.isEmpty {
+                        Button { model.isSelecting = true } label: {
+                            Label(L10n.string("photos.selection.start"), systemImage: "checkmark.circle")
+                        }
                     }
                     if model.isSelecting {
+                        Button { model.clearSelection() } label: {
+                            Label(L10n.string("photos.selection.clear"), systemImage: "xmark.circle")
+                        }
                         Text(L10n.string("photos.selection.count", model.selectedItemCount)).foregroundStyle(.secondary)
                         Button(L10n.string(model.section == .folders ? "photos.folder.selectLoaded" : "photos.selection.loaded")) { model.selectLoadedItems() }
-                            .keyboardShortcut("a", modifiers: .command)
                         Spacer()
                         if let target = model.selectedArchive {
                             PhotoArchiveDownloadMenu(target: target, name: L10n.string("photos.download.defaultName"), model: model)
@@ -324,21 +328,6 @@ struct SynologyPhotosView: View {
                     Button(L10n.string("photos.upload.queue")) { showsUploadQueue = true }
                 }.padding(.horizontal, 16).padding(.vertical, 8)
             }
-            if model.showsAutomaticPreviewStatus {
-                HStack(spacing: 10) {
-                    if model.isGeneratingAutomaticPreview { ProgressView().controlSize(.small) }
-                    Text(model.hasPendingAutomaticPreview && !model.isGeneratingAutomaticPreview
-                         ? L10n.string("photos.automatic.reviewing")
-                         : model.automaticPreviewFilename.map { L10n.string("photos.automatic.processing", $0) }
-                            ?? model.automaticPreviewError ?? L10n.string("photos.automatic.paused"))
-                        .font(.callout).lineLimit(2)
-                    Spacer()
-                    Button(L10n.string(model.automaticPreviewPaused || model.automaticPreviewError != nil ? "photos.automatic.resume" : "photos.automatic.pause")) {
-                        if model.automaticPreviewPaused || model.automaticPreviewError != nil { model.resumeAutomaticPreviews() }
-                        else { model.pauseAutomaticPreviews() }
-                    }
-                }.padding(8)
-            }
 
         }
         .fillsAvailableContentArea(alignment: .topLeading)
@@ -375,6 +364,9 @@ struct SynologyPhotosView: View {
         .onChange(of: model.isManaging) { _, managing in
             if !managing { model.continueTemporarySharingCleanup() }
         }
+        .onChange(of: model.selectedItemCount) { _, count in
+            if count == 0 { model.clearSelection() }
+        }
         .onDisappear { model.leaveGallery() }
         .alert(L10n.string("photos.similar.ungroupSelected"), isPresented: Binding(
             get: { !pendingSimilarGroups.isEmpty }, set: { if !$0 { pendingSimilarGroups = [] } }), presenting: pendingSimilarGroups) { groups in
@@ -405,7 +397,6 @@ struct SynologyPhotosView: View {
         )) {
             Button(L10n.string("photos.media.close"), role: .cancel) { model.deletionSuccessMessage = nil }
         } message: { Text(model.deletionSuccessMessage ?? "") }
-        .sheet(isPresented: $showsPreviewRecovery) { PhotoPreviewRecoveryPanel(model: model, initialSpace: model.selectedSpace) }
         .sheet(isPresented: $showsAutomaticPreviewSettings) { PhotoAutomaticPreviewSettingsPanel(model: model) }
         .sheet(isPresented: $showsGlobalSettings) { PhotoGlobalSettingsPanel(model: model) }
         .sheet(isPresented: $showsCodecPrompt) { PhotoCodecPromptPanel(model: model, initial: codecPromptSeed) }
@@ -561,10 +552,12 @@ struct SynologyPhotosView: View {
                 }
                 .fillsAvailableContentArea()
             } else {
+                GeometryReader { availableSpace in
                 ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 16) {
                         if model.hasPrevious {
+                            Group {
                             if let message = model.previousPageErrorMessage {
                                 Text(message).foregroundStyle(.secondary)
                                 Button(L10n.string("photos.retry")) {
@@ -582,6 +575,7 @@ struct SynologyPhotosView: View {
                                     Spacer()
                                 }
                             }
+                            }.modifier(PhotoSelectionExcludedArea())
                         }
 
                         if model.showsCategories {
@@ -599,7 +593,7 @@ struct SynologyPhotosView: View {
                                     }.buttonStyle(.plain).accessibilityLabel(category.title)
 
                                 }
-                            }
+                            }.modifier(PhotoSelectionExcludedArea())
                         }
                         ForEach(model.visibleSharedEntries) { entry in
                             HStack {
@@ -627,6 +621,7 @@ struct SynologyPhotosView: View {
                                     }
                                 }
                             }.buttonStyle(MacToolbarButtonStyle()).padding().background(palette.card, in: RoundedRectangle(cornerRadius: 10))
+                                .modifier(PhotoSelectionExcludedArea())
                         }
                         if !model.collections.isEmpty {
                             LazyVGrid(columns: columns, spacing: 8) {
@@ -657,7 +652,7 @@ struct SynologyPhotosView: View {
                                         }
                                     }
                                     .accessibilityValue(model.section == .folders && model.isSelecting ? L10n.string(model.selectedFolderIDs.contains(collection.id) ? "photos.selection.selected" : "photos.selection.unselected") : "")
-                                    .onDrag { PhotoDragItemProvider.make(token: model.beginPhotoDrag(folder: collection)) }
+                                    .modifier(PhotoDragSource(model: model, folder: collection))
                                     .modifier(PhotoFolderDropTarget(model: model, target: model.section == .folders ? collection : nil, onDrop: showPhotoDrop))
                                     .contextMenu {
                                         if model.section == .folders {
@@ -714,22 +709,24 @@ struct SynologyPhotosView: View {
                                         }
                                     }
                                 }
-                            }
+                            }.modifier(PhotoSelectionExcludedArea())
                         }
                         if model.showsTimeline {
                             ForEach(model.datedGroups, id: \.date) { group in
                                 HStack {
                                     Text(model.formattedPhotoDate(group.date, group: true))
                                         .font(.headline).accessibilityAddTraits(.isHeader)
-                                    Button { model.selectGroup(group.photos) } label: {
-                                        Image(systemName: Set(group.photos.map(\.id)).isSubset(of: model.selectedPhotoIDs)
-                                            ? "checkmark.circle.fill" : "circle")
+                                    if model.selectedItemCount > 0 {
+                                        Button { model.selectGroup(group.photos) } label: {
+                                            Image(systemName: Set(group.photos.map(\.id)).isSubset(of: model.selectedPhotoIDs)
+                                                ? "checkmark.circle.fill" : "circle")
+                                        }
+                                        .buttonStyle(.plain)
+                                        .accessibilityLabel(L10n.string(model.displayPreferences?.grouping == .month ? "photos.selection.month" : "photos.selection.day"))
+                                        .disabled(model.isDeleting || model.isManaging)
                                     }
-                                    .buttonStyle(.plain)
-                                    .accessibilityLabel(L10n.string(model.displayPreferences?.grouping == .month ? "photos.selection.month" : "photos.selection.day"))
-                                    .disabled(model.isDeleting || model.isManaging)
                                     Spacer()
-                                }
+                                }.modifier(PhotoSelectionExcludedArea())
                                 photoGrid(group.photos)
                             }
                         } else { photoGrid(model.items) }
@@ -747,7 +744,48 @@ struct SynologyPhotosView: View {
                                 .id("\(model.paginationIdentity):\(model.isDeleting):\(model.isManaging)")
                                 .task { await model.loadNextPageAutomatically() }
                         }
-                    }.padding(16)
+                    }
+                    .frame(minHeight: max(0, availableSpace.size.height - 32), alignment: .topLeading)
+                    .padding(16)
+                    .coordinateSpace(name: "photos.selection")
+                    .overlay(alignment: .topLeading) {
+                        if let rectangle = selectionRectangle {
+                            Rectangle().fill(Color.accentColor.opacity(0.12))
+                                .overlay(Rectangle().stroke(Color.accentColor, lineWidth: 1))
+                                .frame(width: rectangle.width, height: rectangle.height)
+                                .offset(x: rectangle.minX, y: rectangle.minY)
+                                .allowsHitTesting(false).accessibilityHidden(true)
+                        }
+                    }
+                    .background {
+                        FileGridMouseInput(
+                            onMouseDown: { point, modifiers in
+                                guard !model.items.isEmpty, !selectionExcludedFrames.contains(where: { $0.contains(point) }) else { return }
+                                galleryHasFocus = true
+                                selectionStart = point
+                                selectionModifiers = modifiers
+                                selectionBase = modifiers.intersection([.command, .shift]).isEmpty ? [] : model.selectedPhotoIDs
+                            },
+                            onMouseDragged: updatePhotoMarquee,
+                            onMouseUp: { point, count in
+                                defer { selectionStart = nil; selectionRectangle = nil; selectionBase = [] }
+                                guard selectionRectangle == nil, let start = selectionStart,
+                                      hypot(point.x - start.x, point.y - start.y) < 3 else { return }
+                                if let photo = model.items.first(where: { selectionFrames[$0.id]?.contains(point) == true }) {
+                                    if count == 2, selectionModifiers.intersection([.command, .shift, .control, .option]).isEmpty {
+                                        model.showPreview(photo)
+                                    } else {
+                                        model.selectPhoto(photo, extending: selectionModifiers.contains(.shift), adding: selectionModifiers.contains(.command))
+                                    }
+                                } else { model.clearSelection() }
+                            },
+                            onRightMouseDown: { point in
+                                if let photo = model.items.first(where: { selectionFrames[$0.id]?.contains(point) == true }),
+                                   !model.selectedPhotoIDs.contains(photo.id) { model.selectPhoto(photo) }
+                            }, capturesDrag: { selectionRectangle != nil })
+                    }
+                    .onPreferenceChange(PhotoSelectionFrames.self) { selectionFrames = $0 }
+                    .onPreferenceChange(PhotoSelectionExcludedFrames.self) { selectionExcludedFrames = $0 }
                 }
                 .macThemedScrollContent()
                 .coordinateSpace(name: "photos.thumbnailViewport")
@@ -767,12 +805,36 @@ struct SynologyPhotosView: View {
                     guard model.hasPrevious, !model.isLoadingPrevious, model.previousPageErrorMessage == nil else { return }
                     Task { await loadPreviousPage(using: proxy) }
                 })
+                .focusable().focusEffectDisabled().focused($galleryHasFocus)
+                .onKeyPress(.escape) { model.clearSelection(); return .handled }
+                .onKeyPress(.space) {
+                    guard let photo = model.selectedPhotos.first else { return .ignored }
+                    model.showPreview(photo); return .handled
+                }
+                .onKeyPress(keys: ["a"]) { key in
+                    guard key.modifiers.contains(.command) else { return .ignored }
+                    if model.section == .folders { model.selectLoadedItems() }
+                    else { model.selectPhotoIDs(Set(model.items.map(\.id))) }
+                    return .handled
+                }
+                }
                 }
             }
 
     }
 
     private var thumbnailScale: Double { model.thumbnailSize.minimumWidth / 150 }
+
+    private func updatePhotoMarquee(_ point: CGPoint) {
+        guard let start = selectionStart,
+              !selectionFrames.values.contains(where: { $0.contains(start) }),
+              hypot(point.x - start.x, point.y - start.y) >= 3 else { return }
+        let rectangle = CGRect(x: min(start.x, point.x), y: min(start.y, point.y),
+                               width: abs(point.x - start.x), height: abs(point.y - start.y))
+        selectionRectangle = rectangle
+        let enclosed = Set(selectionFrames.compactMap { $0.value.intersects(rectangle) ? $0.key : nil })
+        model.selectPhotoIDs(selectionBase.union(enclosed), preservingFolders: !selectionModifiers.intersection([.command, .shift]).isEmpty)
+    }
     private var columns: [GridItem] {
         [GridItem(.adaptive(minimum: model.thumbnailSize.minimumWidth, maximum: model.thumbnailSize.maximumWidth), spacing: 8)]
     }
@@ -793,33 +855,36 @@ struct SynologyPhotosView: View {
         LazyVGrid(columns: columns, spacing: 8) {
             ForEach(photos) { photo in
                 ZStack(alignment: .topLeading) {
-                    Button {
-                        let modifiers = NSEvent.modifierFlags
-                        if model.isSelecting || modifiers.contains(.command) || modifiers.contains(.shift) {
-                            model.toggleSelection(photo, extending: modifiers.contains(.shift))
-                        } else { model.showPreview(photo) }
-                    } label: { SynologyPhotoCell(photo: photo, model: model) }
-                    .buttonStyle(.plain)
+                    SynologyPhotoCell(photo: photo, model: model)
+                    .contentShape(Rectangle())
                     .overlay(RoundedRectangle(cornerRadius: 10)
                         .strokeBorder(model.selectedPhotoIDs.contains(photo.id) ? Color.accentColor : .clear, lineWidth: 3))
-                    Button { model.toggleSelection(photo, extending: NSEvent.modifierFlags.contains(.shift)) } label: {
-                        Image(systemName: model.selectedPhotoIDs.contains(photo.id) ? "checkmark.circle.fill" : "circle")
+                    if model.selectedPhotoIDs.contains(photo.id) {
+                        Image(systemName: "checkmark.circle.fill")
                             .font(.title3).symbolRenderingMode(.palette)
-                            .foregroundStyle(model.selectedPhotoIDs.contains(photo.id) ? Color.accentColor : .white, .white)
+                            .foregroundStyle(Color.accentColor, .white)
                             .padding(5).background(.black.opacity(0.35), in: Circle())
+                            .padding(6).allowsHitTesting(false).accessibilityHidden(true)
                     }
-                    .buttonStyle(.plain).padding(6)
-                    .accessibilityLabel(L10n.string("photos.selection.toggle", photo.filename))
-                    .accessibilityValue(L10n.string(model.selectedPhotoIDs.contains(photo.id)
-                        ? "photos.selection.selected" : "photos.selection.unselected"))
-                    .disabled(model.isDeleting || model.isBrowsingBlocked)
                 }
                 .id(photo.id)
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(photo.filename)
+                .accessibilityAddTraits(.isButton)
+                .accessibilityAction { model.selectPhoto(photo) }
+                .accessibilityAction(named: L10n.string("photos.media.open")) { model.showPreview(photo) }
+                .accessibilityAction(named: L10n.string(model.selectedPhotoIDs.contains(photo.id) ? "photos.selection.remove" : "photos.selection.add")) {
+                    model.selectPhoto(photo, adding: true)
+                }
+                .accessibilityValue(L10n.string("photos.selection.description", PhotoMediaPresentation(photo: photo).title,
+                    L10n.string(model.selectedPhotoIDs.contains(photo.id) ? "photos.selection.selected" : "photos.selection.unselected")))
                 .background(GeometryReader { geometry in
                     Color.clear.preference(key: PhotoThumbnailFrames.self,
                         value: [photo.id: geometry.frame(in: .named("photos.thumbnailViewport"))])
+                        .preference(key: PhotoSelectionFrames.self,
+                            value: [photo.id: geometry.frame(in: .named("photos.selection"))])
                 })
-                .onDrag { PhotoDragItemProvider.make(token: model.beginPhotoDrag(photo: photo)) }
+                .modifier(PhotoDragSource(model: model, photo: photo))
                 .contextMenu {
                     Button(L10n.string("photos.media.open")) { model.showPreview(photo) }
                     if model.selectedPhotoIDs.contains(photo.id), let target = model.selectedArchive {
@@ -865,6 +930,18 @@ enum PhotoDragItemProvider {
             }
         }
         return provider
+    }
+}
+
+private struct PhotoDragSource: ViewModifier {
+    let model: SynologyPhotosModel
+    var photo: SynologyPhoto? = nil
+    var folder: SynologyPhotoCollection? = nil
+
+    @ViewBuilder func body(content: Content) -> some View {
+        if model.section == .folders {
+            content.onDrag { PhotoDragItemProvider.make(token: model.beginPhotoDrag(photo: photo, folder: folder)) }
+        } else { content }
     }
 }
 
@@ -915,6 +992,27 @@ private struct PhotoThumbnailFrames: PreferenceKey {
     static let defaultValue: [SynologyPhotoID: CGRect] = [:]
     static func reduce(value: inout [SynologyPhotoID: CGRect], nextValue: () -> [SynologyPhotoID: CGRect]) {
         value.merge(nextValue(), uniquingKeysWith: { _, next in next })
+    }
+}
+
+private struct PhotoSelectionFrames: PreferenceKey {
+    static let defaultValue: [SynologyPhotoID: CGRect] = [:]
+    static func reduce(value: inout [SynologyPhotoID: CGRect], nextValue: () -> [SynologyPhotoID: CGRect]) {
+        value.merge(nextValue(), uniquingKeysWith: { _, next in next })
+    }
+}
+
+private struct PhotoSelectionExcludedFrames: PreferenceKey {
+    static let defaultValue: [CGRect] = []
+    static func reduce(value: inout [CGRect], nextValue: () -> [CGRect]) { value += nextValue() }
+}
+
+private struct PhotoSelectionExcludedArea: ViewModifier {
+    func body(content: Content) -> some View {
+        content.background(GeometryReader { geometry in
+            Color.clear.preference(key: PhotoSelectionExcludedFrames.self,
+                                   value: [geometry.frame(in: .named("photos.selection"))])
+        })
     }
 }
 
@@ -1587,12 +1685,21 @@ struct SynologyPhotoCell: View {
                         .clipped()
                 }
             } else {
-                Image(systemName: photo.mediaType == "video" ? "video" : "photo")
+                Image(systemName: PhotoMediaPresentation(photo: photo).symbol)
                     .foregroundStyle(.secondary)
             }
         }
         .aspectRatio(1, contentMode: .fit)
         .clipShape(RoundedRectangle(cornerRadius: 8))
+        .overlay(alignment: .bottomLeading) {
+            let media = PhotoMediaPresentation(photo: photo)
+            Label(media.title, systemImage: media.symbol)
+                .font(.caption.weight(.semibold)).lineLimit(1)
+                .padding(.horizontal, 7).padding(.vertical, 4)
+                .foregroundStyle(.white).background(.black.opacity(0.75), in: Capsule())
+                .padding(6).allowsHitTesting(false)
+                .accessibilityIdentifier("photos.mediaType")
+        }
         .overlay(alignment: .bottomTrailing) {
             if showsSimilarBadge, let group = photo.similarGroup {
                 Label(L10n.string("photos.similar.count", group.photoIDs.count), systemImage: "square.stack.3d.up")
@@ -1613,6 +1720,31 @@ struct SynologyPhotoCell: View {
             } catch {
                 // 图片读取失败保持占位，不影响其他照片；刷新后可重试。
             }
+        }
+    }
+}
+
+struct PhotoMediaPresentation {
+    let photo: SynologyPhoto
+
+    var symbol: String {
+        switch photo.mediaType {
+        case "live", "motion_photo": "livephoto"
+        case "video", "video360", "video_360": "video.fill"
+        case "burst": "square.stack.3d.up.fill"
+        case "photo", "photo360": "photo.fill"
+        default: "doc"
+        }
+    }
+
+    var title: String {
+        switch photo.mediaType {
+        case "live": L10n.string("photos.mediaType.live")
+        case "motion_photo": L10n.string("photos.mediaType.motion")
+        case "video", "video360", "video_360": L10n.string("photos.mediaType.video")
+        case "burst": L10n.string("photos.mediaType.burst")
+        case "photo", "photo360": L10n.string("photos.mediaType.photo")
+        default: L10n.string("photos.mediaType.other")
         }
     }
 }

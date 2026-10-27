@@ -2895,6 +2895,11 @@ struct PhotoAutomaticPreviewSettingsPanel: View {
                         if model.isGeneratingAutomaticPreview {
                             Button(L10n.string("photos.automatic.pause")) { model.pauseAutomaticPreviews() }
                         }
+                        if model.canResumeAutomaticPreviews {
+                            Button(L10n.string("photos.automatic.resume")) { model.resumeAutomaticPreviews() }
+                                .accessibilityIdentifier("photos.automatic.resume")
+                                .disabled(model.isGeneratingAutomaticPreview)
+                        }
                     }.formStyle(.grouped)
                 }
             }.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)

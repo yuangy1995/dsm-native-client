@@ -1672,6 +1672,11 @@ public protocol NasSettingsRepository: Sendable {
         _ action: NasPowerAction
     ) async throws -> MutationResult
     func checkSystemUpdate() async throws -> NasSystemUpdateInfo
+    func loadSystemUpdateStatus() async throws -> NasSystemUpdateStatus
+    func downloadSystemUpdate(expectedVersion: String) async throws
+    func prepareSystemUpdate(expectedVersion: String) async throws -> NasSystemUpdatePlan
+    func installSystemUpdate(plan: NasSystemUpdatePlan) async throws -> NasSystemUpdateSubmission
+    func loadSystemUpdateProgress() async throws -> NasSystemUpdateStatus
 }
 
 public extension NasSettingsRepository {
@@ -2104,6 +2109,11 @@ public extension NasSettingsRepository {
     func checkSystemUpdate() async throws -> NasSystemUpdateInfo {
         throw unsupportedManagementOperation()
     }
+    func loadSystemUpdateStatus() async throws -> NasSystemUpdateStatus { throw unsupportedManagementOperation() }
+    func downloadSystemUpdate(expectedVersion: String) async throws { throw unsupportedManagementOperation() }
+    func prepareSystemUpdate(expectedVersion: String) async throws -> NasSystemUpdatePlan { throw unsupportedManagementOperation() }
+    func installSystemUpdate(plan: NasSystemUpdatePlan) async throws -> NasSystemUpdateSubmission { throw unsupportedManagementOperation() }
+    func loadSystemUpdateProgress() async throws -> NasSystemUpdateStatus { throw unsupportedManagementOperation() }
 
     private func unsupportedManagementOperation() -> AppError {
         AppError(

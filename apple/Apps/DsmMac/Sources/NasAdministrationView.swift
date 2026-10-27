@@ -61,7 +61,7 @@ struct NasSettingsView: View {
                     onPerformPowerAction: { action in
                         try await model.performPowerAction(action)
                     },
-                    onCheckSystemUpdate: { try await model.checkSystemUpdate() }
+                    systemUpdate: model.systemUpdate
                 )
             }
         case .storage:
@@ -4680,18 +4680,14 @@ struct PerformanceDashboard: View {
     let onPerformPowerAction: (
         (NasPowerAction) async throws -> MutationResult
     )?
-    let onCheckSystemUpdate: (() async throws -> NasSystemUpdateInfo)?
+    let systemUpdate: NasSystemUpdateModel?
 
     @State private var showShutdownConfirm = false
     @State private var showRebootConfirm = false
-    @State private var isCheckingSystemUpdate = false
+    @State private var showsSystemUpdate = false
     @State private var powerActionAlertTitle = ""
     @State private var powerActionAlertMessage = ""
     @State private var showPowerActionAlert = false
-    @State private var updateAlertTitle: String = L10n.string("ui.101da319b2a7ef1c")
-    @State private var updateAlertMessage: String? = nil
-    @State private var showUpdateAlert = false
-
     private var latest: NasPerformanceSnapshot? { history.last }
 
     private let mainDashboardColumns = [
@@ -4771,12 +4767,8 @@ struct PerformanceDashboard: View {
         } message: {
             Text(powerActionAlertMessage)
         }
-        .alert(updateAlertTitle, isPresented: $showUpdateAlert) {
-            Button(L10n.string("ui.fac2a67ad87807c4"), role: .cancel) {}
-        } message: {
-            if let updateAlertMessage {
-                Text(updateAlertMessage)
-            }
+        .macSheet(isPresented: $showsSystemUpdate) {
+            if let systemUpdate { NasSystemUpdateView(model: systemUpdate) }
         }
     }
 
@@ -4847,7 +4839,7 @@ struct PerformanceDashboard: View {
 
     private var dashboardUpdateButton: some View {
         Button {
-            checkSystemUpdate()
+            showsSystemUpdate = true
         } label: {
             Label(
                 L10n.string("ui.48954b3a9a918624"),
@@ -4856,7 +4848,7 @@ struct PerformanceDashboard: View {
         }
         .buttonStyle(MacToolbarButtonStyle())
         .controlSize(.small)
-        .disabled(isCheckingSystemUpdate)
+        .disabled(systemUpdate == nil || isPowerActionBusy)
     }
 
     private var dashboardPowerMenu: some View {
@@ -4893,7 +4885,7 @@ struct PerformanceDashboard: View {
         .font(.system(size: 16))
         .frame(minHeight: 20)
         .macThemedMenu()
-        .disabled(isPowerActionBusy || isCheckingSystemUpdate)
+        .disabled(isPowerActionBusy || systemUpdate?.blocksPowerActions == true)
     }
 
     private var dashboardPauseButton: some View {
@@ -4949,45 +4941,6 @@ struct PerformanceDashboard: View {
                 powerActionAlertMessage = powerActionError(error)
             }
             showPowerActionAlert = true
-        }
-    }
-
-    private func checkSystemUpdate() {
-        guard !isCheckingSystemUpdate, let onCheckSystemUpdate else { return }
-        isCheckingSystemUpdate = true
-        Task {
-            defer { isCheckingSystemUpdate = false }
-            do {
-                let info = try await onCheckSystemUpdate()
-                if info.isUpdateAvailable {
-                    updateAlertTitle = L10n.string("ui.ac217e4d1ca410f1")
-                    let version = info.latestVersion
-                        ?? L10n.string("system-update.version-unknown")
-                    if let releaseNotes = info.releaseNotes {
-                        updateAlertMessage = L10n.string(
-                            "system-update.available-with-notes",
-                            version,
-                            releaseNotes
-                        )
-                    } else {
-                        updateAlertMessage = L10n.string(
-                            "system-update.available",
-                            version
-                        )
-                    }
-                } else if let current = info.currentVersion {
-                    updateAlertTitle = L10n.string("ui.bc310480b4ce9236")
-                    updateAlertMessage = L10n.string("ui.2744a3e4d928c6d6", String(describing: current))
-                } else {
-                    updateAlertTitle = L10n.string("ui.101da319b2a7ef1c")
-                    updateAlertMessage = L10n.string("ui.0d8f9e8efd964bef")
-                }
-            } catch {
-                updateAlertTitle = L10n.string("ui.d07abfb11e7e0d48")
-                updateAlertMessage = (error as? AppError)?.safeUserMessage
-                    ?? L10n.string("ui.e3b91993e9c3f67e")
-            }
-            showUpdateAlert = true
         }
     }
 
