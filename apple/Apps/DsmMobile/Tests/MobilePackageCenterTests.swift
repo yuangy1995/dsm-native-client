@@ -11,6 +11,36 @@ import XCTest
         for value in values { try? FileManager.default.removeItem(at: value) }
         try await super.tearDown()
     }
+    func test纯加载夹具收到取消后结束且不产生成功响应或写入() async {
+        let transport = MobilePackageUITransport(mode: "nas-package-loading")
+        let request: URLRequest = {
+            var request = URLRequest(url: URL(string: "https://fixture.example.invalid/entry.cgi")!)
+            request.httpMethod = "POST"
+            request.httpBody = Data("api=\(DsmAPIName.corePackage)&method=list".utf8)
+            return request
+        }()
+        let finished = expectation(description: "套件加载读取响应取消")
+        let task = Task {
+            defer { finished.fulfill() }
+            do { _ = try await transport.send(request); XCTFail("纯加载不得返回成功响应") }
+            catch is CancellationError {}
+            catch { XCTFail("应返回取消错误：\(error)") }
+        }
+        defer { task.cancel() }
+        let deadline = ContinuousClock.now.advanced(by: .seconds(2))
+        while await transport.calls.isEmpty {
+            guard ContinuousClock.now < deadline else {
+                XCTFail("套件加载读取未在 2 秒内开始")
+                return
+            }
+            await Task.yield()
+        }
+        task.cancel()
+        let result = await XCTWaiter.fulfillment(of: [finished], timeout: 2)
+        XCTAssertEqual(result, .completed)
+        let calls = await transport.calls, writes = await transport.writes
+        XCTAssertEqual(calls.count, 1); XCTAssertTrue(writes.isEmpty)
+    }
     func test列表设置和来源使用实际适配且读取独立() async throws {
         let (model, _, _, _) = try make(); await load(model)
         XCTAssertEqual(model.installed.map(\.id), ["SyntheticPackage"])

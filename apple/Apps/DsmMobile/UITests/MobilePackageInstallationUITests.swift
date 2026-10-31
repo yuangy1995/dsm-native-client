@@ -116,7 +116,20 @@ import XCTest
         MobileUITestNavigation.enableModule(app, module: "nasSettings", test: self)
         MobileUITestNavigation.open(app, destination: "nasSettings", title: chinese ? "NAS 设置" : "NAS settings", test: self)
         reveal("mobile.nas.page.packages", app).tap(); XCTAssertTrue(app.collectionViews["mobile.package.list"].waitForExistence(timeout: 8))
-        reveal("mobile.package.catalog", app).tap(); XCTAssertTrue(app.collectionViews["mobile.package.catalog.list"].waitForExistence(timeout: 8)); return app
+        reveal("mobile.package.catalog", app).tap()
+        let catalog = app.collectionViews["mobile.package.catalog.list"]
+        if !catalog.waitForExistence(timeout: 8) {
+            MobileUITestNavigation.capture(app, name: "Package catalog first navigation", test: self)
+            // #458 更新分类用例中目录页未呈现。仅当仍停留套件列表且原入口
+            // 可操作时再补一次页面导航；安装和更新提交绝不重复执行。
+            let list = app.collectionViews["mobile.package.list"]
+            let entry = app.buttons["mobile.package.catalog"]
+            if list.exists, entry.exists, entry.isEnabled, entry.isHittable {
+                entry.press(forDuration: 0.15)
+            }
+        }
+        XCTAssertTrue(catalog.waitForExistence(timeout: 8))
+        return app
     }
     private func prepare(_ id: String, _ app: XCUIApplication) {
         reveal("mobile.package.catalog.row.\(id)", app).tap()

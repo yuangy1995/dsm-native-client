@@ -72,7 +72,16 @@ final class MobileDDNSUITests: XCTestCase {
             let app = launch(state)
             switch state {
             case "nas-ddns-empty":
-                XCTAssertTrue(app.staticTexts["No Domain Records"].waitForExistence(timeout: 8))
+                let empty = app.staticTexts["No Domain Records"]
+                if !empty.waitForExistence(timeout: 8) {
+                    // iPad 侧栏首次点按可能未切换详情；只在原入口仍未选中时补一次只读导航。
+                    MobileUITestNavigation.capture(app, name: "DDNS empty initial navigation", test: self)
+                    let destination = element("mobile.nas.page.ddns", app)
+                    if destination.exists && destination.isEnabled && destination.isHittable && !destination.isSelected {
+                        destination.tap()
+                    }
+                }
+                XCTAssertTrue(empty.waitForExistence(timeout: 8))
                 XCTAssertTrue(element("mobile.nas.ddns.add", app).isEnabled)
             case "nas-ddns-loading":
                 XCTAssertTrue(app.staticTexts["Loading domain records…"].waitForExistence(timeout: 8))

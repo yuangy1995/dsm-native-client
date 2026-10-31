@@ -49,7 +49,36 @@ final class MobileNasStorageUITests: XCTestCase {
         screenshot(app, "Quick drive test confirmation")
         element("mobile.nas.disk.confirm", app).press(forDuration: 0.15)
         assertTestState("Quick test running", app)
-        reveal("mobile.nas.disk.stop", in: app).tap()
+        // 状态轮询期间 SwiftUI 会暂时移除操作按钮；先滚动真实详情表单，
+        // 等 Stop 确实可点才执行唯一一次停止操作，不重复启动或停止提交。
+        let detailForm = app.collectionViews["mobile.nas.disk.details"]
+        XCTAssertTrue(detailForm.waitForExistence(timeout: 8))
+        let stop = app.buttons["mobile.nas.disk.stop"]
+        var canStop = false
+        for _ in 0..<8 {
+            if stop.waitForExistence(timeout: 2) {
+                let frame = stop.frame
+                let visible = frame.intersection(detailForm.frame).intersection(app.frame)
+                // #458 的 Stop 暂时存在于 AX 树，但激活点无效；先验证真实
+                // 有限且可见的按钮矩形，再读取 hittable，避免 XCTest 事件合成异常。
+                if !frame.isNull, !frame.isInfinite, !frame.isEmpty,
+                   frame.midX.isFinite, frame.midY.isFinite,
+                   !visible.isNull, !visible.isInfinite, !visible.isEmpty,
+                   visible.width > 8, visible.height > 8,
+                   stop.isEnabled, stop.isHittable {
+                    canStop = true
+                    break
+                }
+            }
+            scroll(detailForm, upward: true, in: app)
+        }
+        if !canStop {
+            let snapshot = XCTAttachment(string: app.debugDescription)
+            snapshot.name = "Drive stop control unavailable hierarchy"; snapshot.lifetime = .keepAlways; add(snapshot)
+            screenshot(app, "Drive stop control unavailable")
+        }
+        XCTAssertTrue(canStop, "快速检测已在运行但停止入口不可操作")
+        if canStop { stop.tap() }
         XCTAssertTrue(element("mobile.nas.disk.confirm", app).waitForExistence(timeout: 5)); element("mobile.nas.disk.confirm", app).press(forDuration: 0.15)
         assertTestState("No test running", app)
         screenshot(app, "Drive test stopped and history retained")

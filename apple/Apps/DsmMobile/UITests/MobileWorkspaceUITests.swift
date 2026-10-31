@@ -227,7 +227,16 @@ final class MobileWorkspaceUITests: XCTestCase {
     func test相似分类空内容加载失败与无写权限保留正确入口() {
         for state in ["photo-similar-empty", "photo-similar-loading", "photo-similar-error", "photo-similar-readonly"] {
             let app = launchFixture(state: state); openSimilarPhotos(app, expectPhotos: false)
-            if state.hasSuffix("empty") { XCTAssertTrue(app.staticTexts["No similar photos found. You can refresh to check again."].waitForExistence(timeout: 8)) }
+            if state.hasSuffix("empty") {
+                let empty = app.staticTexts["No similar photos found. You can refresh to check again."]
+                if !empty.waitForExistence(timeout: 8) {
+                    MobileUITestNavigation.capture(app, name: "Similar photos empty category first presentation", test: self)
+                    // 仅在仍显示类别入口时恢复一次只读导航；真实空内容仍须完整出现。
+                    let category = app.buttons["Similar Photos"].firstMatch
+                    if category.exists && category.isEnabled && category.isHittable && !empty.exists { category.tap() }
+                }
+                XCTAssertTrue(empty.waitForExistence(timeout: 8))
+            }
             else if state.hasSuffix("loading") { XCTAssertTrue(element("mobile.photos.loading", in: app).waitForExistence(timeout: 5)) }
             else if state.hasSuffix("error") { XCTAssertTrue(app.buttons["Try again"].firstMatch.waitForExistence(timeout: 8)); XCTAssertFalse(app.buttons["Sample 1.jpg"].exists) }
             else {
@@ -359,8 +368,19 @@ final class MobileWorkspaceUITests: XCTestCase {
             thenDragTo: origin.withOffset(CGVector(dx: frame.midX, dy: frame.minY + height * 0.25)))
     }
     private func beginPhotoDeletion(in app: XCUIApplication) {
-        element("mobile.photos.selection.actions", in: app).tap(); element("mobile.photos.selection.delete", in: app).tap()
-        XCTAssertTrue(app.alerts.firstMatch.waitForExistence(timeout: 8))
+        let menu = element("mobile.photos.selection.actions", in: app)
+        XCTAssertTrue(menu.wait(for: \.isHittable, toEqual: true, timeout: 8))
+        menu.tap()
+        let delete = element("mobile.photos.selection.delete", in: app)
+        XCTAssertTrue(delete.wait(for: \.isHittable, toEqual: true, timeout: 8))
+        XCTAssertTrue(delete.isEnabled)
+        delete.tap()
+        let confirmation = app.alerts.firstMatch
+        if !confirmation.waitForExistence(timeout: 8) {
+            let attachment = XCTAttachment(string: app.debugDescription)
+            attachment.name = "Photo deletion confirmation hierarchy"; add(attachment)
+        }
+        XCTAssertTrue(confirmation.exists)
     }
 
     func test人物显示隐藏与主题搜索() {
@@ -830,10 +850,22 @@ final class MobileWorkspaceUITests: XCTestCase {
         element("mobile.photos.preferences.grouping", in: app).tap(); app.buttons["按月"].tap()
         let info = app.switches["mobile.photos.preferences.info"]
         for _ in 0..<3 where !info.isHittable { app.swipeUp() }
-        info.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.5)).tap()
+        XCTAssertTrue(info.isHittable)
+        // 测试目标是“默认显示资料”，不能把已开启的开关再切回关闭。
+        if info.value as? String == "0" {
+            info.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.5)).tap()
+        }
+        XCTAssertEqual(info.value as? String, "1")
         attachScreenshot(app, name: "照片显示设置")
-        app.buttons["mobile.photos.preferences.save"].tap(); XCTAssertTrue(app.staticTexts["操作已完成。"].waitForExistence(timeout: 20))
-        app.buttons["Sample 1.jpg"].tap(); XCTAssertTrue(app.staticTexts["拍摄时间"].waitForExistence(timeout: 5))
+        let save = app.buttons["mobile.photos.preferences.save"]
+        XCTAssertTrue(save.isEnabled); save.tap()
+        XCTAssertTrue(app.staticTexts["操作已完成。"].waitForExistence(timeout: 20))
+        XCTAssertTrue(element("mobile.photos.preferences.grouping", in: app).waitForNonExistence(timeout: 8))
+        let photo = app.buttons["Sample 1.jpg"]
+        XCTAssertTrue(photo.waitForExistence(timeout: 8)); photo.tap()
+        // 资料行合并了标题和值，辅助功能树不再有单独的“拍摄时间”StaticText。
+        let taken = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", "拍摄时间")).firstMatch
+        XCTAssertTrue(taken.waitForExistence(timeout: 8))
         attachScreenshot(app, name: "照片预览默认显示资料")
     }
 
@@ -959,10 +991,12 @@ final class MobileWorkspaceUITests: XCTestCase {
         XCTAssertTrue(app.alerts.firstMatch.waitForExistence(timeout: 5)); XCTAssertTrue(app.staticTexts["Completed copies or moves will remain. The remaining work will stop."].exists)
         attachScreenshot(app, name: "Photo task cancellation consequences")
         app.alerts.buttons["mobile.photos.tasks.confirm"].firstMatch.tap()
-        XCTAssertTrue(app.staticTexts["No Matching Tasks"].waitForExistence(timeout: 8))
+        // 先核对 NAS 回读的已取消结果，再在“进行中”筛选中确认任务确实退出；绝不重复提交取消。
         app.segmentedControls.buttons["Finished"].tap()
-        XCTAssertTrue(app.staticTexts["Canceled"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Canceled"].waitForExistence(timeout: 8))
         XCTAssertTrue(app.staticTexts["Processed 2 of 5 · Failed 0 · Skipped 0 · Replaced 0"].exists)
+        app.segmentedControls.buttons["In Progress"].tap()
+        XCTAssertTrue(app.staticTexts["No Matching Tasks"].waitForExistence(timeout: 8))
     }
 
     func test照片后台任务清除记录和打开原目标() {
@@ -1049,7 +1083,12 @@ final class MobileWorkspaceUITests: XCTestCase {
         let app = launchFixture(state: "photo-folders", language: "zh-Hans"); defer { app.terminate() }
         openPhotos(app, chinese: true); openPhotoSection("文件夹", app: app)
         XCTAssertTrue(app.buttons["mobile.photos.collection.2"].waitForExistence(timeout: 5)); app.buttons["mobile.photos.collection.2"].tap()
-        element("mobile.photos.actions", in: app).tap(); element("mobile.photos.folder.cover", in: app).tap()
+        // 进入目录会异步更新工具栏；先确认子目录已载入，再展开当前目录的操作菜单。
+        XCTAssertTrue(app.buttons["mobile.photos.collection.200"].waitForExistence(timeout: 5))
+        let cover = app.buttons["mobile.photos.folder.cover"]
+        guard MobileUITestNavigation.openMenu(app.buttons["mobile.photos.actions"], showing: cover, in: app, test: self) else { return }
+        XCTAssertTrue(cover.isEnabled)
+        XCTAssertTrue(cover.wait(for: \.isHittable, toEqual: true, timeout: 5)); cover.tap()
         XCTAssertTrue(app.buttons["mobile.photos.folder.child.200"].waitForExistence(timeout: 5)); app.buttons["mobile.photos.folder.child.200"].tap()
         let photo = app.buttons["mobile.photos.folder.cover.3"]
         XCTAssertTrue(photo.waitForExistence(timeout: 5)); photo.tap(); attachScreenshot(app, name: "照片目录子目录封面选择")
@@ -1087,9 +1126,35 @@ final class MobileWorkspaceUITests: XCTestCase {
         for state in ["photo-folders-loading", "photo-folders-error", "photo-folders-empty"] {
             let app = launchFixture(state: state)
             openPhotos(app); selectPhotoItems(app)
-            element("mobile.photos.selection.actions", in: app).tap(); element("mobile.photos.folder.copy", in: app).tap()
+            let actions = element("mobile.photos.selection.actions", in: app)
+            actions.tap()
+            let copy = element("mobile.photos.folder.copy", in: app)
+            XCTAssertTrue(copy.waitForExistence(timeout: 5), app.debugDescription)
+            copy.tap()
+            let form = app.buttons["mobile.photos.folder.submit"]
+            if !form.waitForExistence(timeout: 5) {
+                MobileUITestNavigation.capture(app, name: "Photo folder destination first presentation " + state, test: self)
+                let destinationStarted = element("mobile.photos.folder.loading", in: app).exists ||
+                    element("mobile.photos.folder.empty", in: app).exists ||
+                    app.staticTexts["Folder unavailable"].exists
+                // 只在目标表单未出现且原选择菜单仍可触达时，恢复一次无写入的复制导航。
+                if !form.exists && !destinationStarted && actions.exists && actions.isEnabled && actions.isHittable {
+                    actions.press(forDuration: 0.15)
+                    let reopened = element("mobile.photos.folder.copy", in: app)
+                    if reopened.waitForExistence(timeout: 3) && reopened.isEnabled && reopened.isHittable {
+                        reopened.press(forDuration: 0.15)
+                    }
+                }
+            }
+            XCTAssertTrue(form.waitForExistence(timeout: 8), app.debugDescription)
             if state.hasSuffix("loading") { XCTAssertTrue(element("mobile.photos.folder.loading", in: app).waitForExistence(timeout: 5)) }
-            else if state.hasSuffix("error") { XCTAssertTrue(app.staticTexts["Could not load the folder. Check your connection and try again."].waitForExistence(timeout: 5)) }
+            else if state.hasSuffix("error") {
+                let error = app.staticTexts["Could not load the folder. Check your connection and try again."]
+                if !error.waitForExistence(timeout: 5) {
+                    MobileUITestNavigation.capture(app, name: "Photo folder load error not shown", test: self)
+                }
+                XCTAssertTrue(error.exists, app.debugDescription)
+            }
             else { XCTAssertTrue(element("mobile.photos.folder.empty", in: app).waitForExistence(timeout: 5)) }
             XCTAssertFalse(app.buttons["mobile.photos.folder.submit"].isEnabled)
             attachScreenshot(app, name: state); app.buttons["Cancel"].tap(); app.terminate()
@@ -1833,7 +1898,7 @@ final class MobileWorkspaceUITests: XCTestCase {
         navigate("settings", title: chinese ? "App 设置" : "App settings", in: app)
         MobileUITestNavigation.enableModule(app, module: "photos", test: self)
         navigate("photos", title: chinese ? "照片" : "Photos", in: app)
-        let actions = element("mobile.photos.actions", in: app)
+        let actions = app.buttons["mobile.photos.actions"]
         if !actions.waitForExistence(timeout: 20) { MobileUITestNavigation.capture(app, name: "Photos actions missing", test: self) }
         XCTAssertTrue(actions.exists)
     }
@@ -1980,7 +2045,9 @@ final class MobileWorkspaceUITests: XCTestCase {
         navigate("settings", title: "App 设置", in: app)
         XCTAssertTrue(app.staticTexts["可开启的功能"].waitForExistence(timeout: 8))
         let toggle = element("mobile.settings.module.downloads", in: app)
-        XCTAssertTrue(toggle.waitForExistence(timeout: 8)); toggle.switches.firstMatch.tap()
+        XCTAssertTrue(toggle.waitForExistence(timeout: 8))
+        // 模块开关首次手势可能未改变原生值；先核实确实开启才寻找新增的下载导航入口。
+        MobileUITestNavigation.enableModule(app, module: "downloads", test: self)
         navigate("downloads", title: "下载管理", in: app)
         XCTAssertTrue(app.staticTexts["Sample archive.zip"].waitForExistence(timeout: 8))
         navigate("settings", title: "App 设置", in: app)
@@ -2221,7 +2288,21 @@ final class MobileWorkspaceUITests: XCTestCase {
         let app = launchFixture(state: "permissions-acl")
         defer { app.terminate() }
         XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 20))
-        app.buttons["Actions for Sample folder"].tap(); app.buttons["Owner and permissions"].tap()
+        let actions = app.buttons["Actions for Sample folder"]
+        let permissions = app.buttons["Owner and permissions"]
+        XCTAssertTrue(actions.isHittable); actions.tap()
+        var opened = permissions.wait(for: \.isHittable, toEqual: true, timeout: 5)
+        if !opened {
+            MobileUITestNavigation.capture(app, name: "Shared root permissions menu first presentation", test: self)
+            // 原生菜单首次点击可能没有展开；仅当入口仍可操作且菜单项未出现时补只读导航。
+            if !permissions.exists && actions.exists && actions.isEnabled && actions.isHittable {
+                actions.tap()
+                opened = permissions.wait(for: \.isHittable, toEqual: true, timeout: 8)
+            }
+        }
+        XCTAssertTrue(opened, "共享根权限菜单项未出现或不可操作")
+        guard opened else { return }
+        permissions.tap()
         XCTAssertTrue(app.staticTexts["Permissions are read-only here. Manage permissions for this location in DSM."].waitForExistence(timeout: 8))
         XCTAssertFalse(app.buttons["files.permissions.save"].isEnabled)
         let rule = app.buttons["Sample member, Allow"]
@@ -2599,13 +2680,40 @@ final class MobileWorkspaceUITests: XCTestCase {
     }
 
     private func openFileActions(_ app: XCUIApplication) {
-        let direct = element("files.toolbar.more", in: app)
-        if direct.exists && direct.isHittable { direct.tap(); return }
-        let overflow = app.buttons["OverflowBarButtonItem"].firstMatch
-        XCTAssertTrue(overflow.waitForExistence(timeout: 5)); overflow.tap()
-        // 原生溢出菜单保留动作标题，不保留原 ToolbarItem 的标识。
-        let more = app.buttons.matching(NSPredicate(format: "label IN %@", ["More", "更多"])).firstMatch
-        XCTAssertTrue(more.waitForExistence(timeout: 5)); more.tap()
+        // 小屏幕会把按钮移入原生溢出菜单；只查询导航栏按钮，避免为不存在的直接入口遍历整棵辅助功能树。
+        let direct = app.navigationBars.buttons["files.toolbar.more"].firstMatch
+        let contents = app.buttons["files.settings.open"]
+        if direct.exists && direct.isHittable {
+            MobileUITestNavigation.openMenu(direct, showing: contents, in: app, test: self)
+            return
+        }
+        let overflow = app.navigationBars.buttons["OverflowBarButtonItem"].firstMatch
+        let ready = overflow.wait(for: \.isHittable, toEqual: true, timeout: 10)
+        if !ready { MobileUITestNavigation.capture(app, name: "Files toolbar overflow", test: self) }
+        XCTAssertTrue(ready, "文件工具栏溢出入口尚未可操作")
+        guard ready else { return }
+        overflow.tap()
+        // 原生溢出菜单保留动作标题但丢失标识；全局 firstMatch 可能命中底部标签栏的同名“More”。
+        func visibleMore() -> XCUIElement? {
+            let tab = app.tabBars.firstMatch
+            let tabTop = tab.exists ? tab.frame.minY : app.frame.maxY
+            return app.buttons.matching(NSPredicate(format: "label IN %@", ["More", "更多"]))
+                .allElementsBoundByIndex.first { candidate in
+                    let frame = candidate.frame
+                    return frame.origin.x.isFinite && frame.origin.y.isFinite
+                        && frame.width.isFinite && frame.height.isFinite
+                        && frame.width > 0 && frame.height > 0
+                        && frame.midY < tabTop && candidate.isHittable
+                }
+        }
+        let presented = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            visibleMore() != nil
+        }, object: app)
+        let appeared = XCTWaiter.wait(for: [presented], timeout: 10) == .completed
+        if !appeared { MobileUITestNavigation.capture(app, name: "Files overflow More item", test: self) }
+        XCTAssertTrue(appeared, "文件溢出菜单中没有可操作的 More 项")
+        guard appeared, let more = visibleMore() else { return }
+        MobileUITestNavigation.openMenu(more, showing: contents, in: app, test: self)
     }
 
     private func openFileSettings(_ app: XCUIApplication) {

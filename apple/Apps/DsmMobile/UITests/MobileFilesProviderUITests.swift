@@ -16,8 +16,16 @@ final class MobileFilesProviderUITests: XCTestCase {
         let shared = sharedFolder(in: app)
         if !shared.waitForExistence(timeout: 15) { MobileUITestNavigation.capture(app, name: "Read-only shared folder missing", test: self) }
         XCTAssertTrue(shared.exists, app.debugDescription); shared.tap()
-        let file = app.cells["Sample, txt"].firstMatch
-        XCTAssertTrue(file.waitForExistence(timeout: 15), app.debugDescription); file.tap()
+        // 系统文件选择器快照已显示 Shared 下真实的 Sample, txt 单元格；
+        // 按原生单元格标识重新读取，避免用外层复合名称匹配错过延迟注册的项。
+        let file = app.descendants(matching: .any).matching(identifier: "Sample, txt").firstMatch
+        if !file.waitForExistence(timeout: 15) {
+            MobileUITestNavigation.capture(app, name: "Read-only Files item first listing", test: self)
+        }
+        XCTAssertTrue(file.waitForExistence(timeout: 8), app.debugDescription)
+        XCTAssertEqual(file.elementType, .cell, "必须进入系统文件列表中的真实文件单元格")
+        XCTAssertTrue(file.isHittable, app.debugDescription)
+        file.tap()
         let contents = element("mobile.files.test-contents", app)
         XCTAssertTrue(contents.waitForExistence(timeout: 20), app.debugDescription)
         XCTAssertEqual(element("mobile.files.test-filename", app).label, "Sample.txt")
@@ -32,9 +40,7 @@ final class MobileFilesProviderUITests: XCTestCase {
         element("mobile.files-location.row", app).tap()
         let editing = app.switches["mobile.files-location.editing"]
         XCTAssertTrue(editing.waitForExistence(timeout: 8)); tapSwitch(editing)
-        XCTAssertTrue(app.alerts.firstMatch.waitForExistence(timeout: 5))
-        app.alerts.buttons["Allow editing"].tap()
-        waitValue(editing, "1")
+        confirmEditing(editing, in: app, title: "Allow editing")
         screenshot(app, "files-location-editing-enabled")
         activateSystemLocation()
         app.activate()
@@ -68,14 +74,24 @@ final class MobileFilesProviderUITests: XCTestCase {
         let app = launch(chinese: true)
         defer { app.terminate() }
         addLocation(app, chinese: true)
-        element("mobile.files-location.row", app).tap()
+        let locationRow = element("mobile.files-location.row", app)
+        XCTAssertTrue(locationRow.isHittable)
+        locationRow.press(forDuration: 0.15)
         let deleting = app.switches["mobile.files-location.deleting"]
+        if !deleting.waitForExistence(timeout: 8) {
+            MobileUITestNavigation.capture(app, name: "Files location detail first navigation", test: self)
+            // 只在详情没有打开且原位置行仍可操作时，再恢复一次纯导航触控。
+            if !deleting.exists && locationRow.exists && locationRow.isEnabled && locationRow.isHittable {
+                locationRow.press(forDuration: 0.15)
+            }
+        }
         XCTAssertTrue(deleting.waitForExistence(timeout: 8)); XCTAssertFalse(deleting.isEnabled)
-        tapSwitch(app.switches["mobile.files-location.editing"])
+        let editing = app.switches["mobile.files-location.editing"]
+        tapSwitch(editing)
         XCTAssertTrue(app.alerts.firstMatch.waitForExistence(timeout: 5))
         screenshot(app, "files-chinese-edit-confirmation")
         scrollConfirmation(app, name: "files-chinese-edit-consequence")
-        app.alerts.buttons["允许编辑"].tap()
+        confirmEditing(editing, in: app, title: "允许编辑")
         tapSwitch(deleting)
         XCTAssertTrue(app.alerts.firstMatch.waitForExistence(timeout: 5))
         screenshot(app, "files-chinese-delete-confirmation")
@@ -84,10 +100,10 @@ final class MobileFilesProviderUITests: XCTestCase {
         XCTAssertEqual(deleting.value as? String, "0")
         let pause = app.switches["mobile.files-location.pause"]
         tapSwitch(pause)
-        waitValue(pause, "1")
+        waitValue(pause, "1", in: app)
         screenshot(app, "files-chinese-paused-large")
         tapSwitch(pause)
-        waitValue(pause, "0")
+        waitValue(pause, "0", in: app)
         let remove = app.buttons["mobile.files-location.remove"]
         for _ in 0..<4 where !remove.isHittable { app.swipeUp() }
         remove.tap()
@@ -152,28 +168,67 @@ final class MobileFilesProviderUITests: XCTestCase {
     private func openLocation(_ app: XCUIApplication, enable: Bool = false) {
         let sidebar = app.buttons["ToggleSideBar"]
         let identifiers = ["DOC.sidebar.item.岚仓", "DOC.sidebar.item.LanStash", "DOC.sidebar.item.Sample NAS"]
-        let provider = app.descendants(matching: .any).matching(NSPredicate(format: "identifier IN %@", identifiers)).firstMatch
-        let ready = app.descendants(matching: .any).matching(NSPredicate(
-            format: "identifier IN %@ OR (elementType == %d AND label IN %@)",
-            identifiers, XCUIElement.ElementType.button.rawValue, ["Browse", "浏览"])).firstMatch
-        // 系统远程选择器冷启动曾约 35 秒才显示导航；先等真实控件，再按原期限切换目录。
-        let navigation = app.descendants(matching: .any).matching(NSPredicate(
-            format: "identifier IN %@ OR (elementType == %d AND label IN %@)",
-            identifiers + ["ToggleSideBar"], XCUIElement.ElementType.button.rawValue, ["Browse", "浏览"])).firstMatch
-        XCTAssertTrue(navigation.waitForExistence(timeout: 60), app.debugDescription)
-        if sidebar.exists { sidebar.tap() }
+        // #457 的 iPad 系统文件选择器 AX 树已有真实位置 Cell；按稳定 identifier
+        // 从任意类型重新定位，不依赖会漏掉远程注册项的 cells 快照查询。
+        let provider = app.descendants(matching: .any).matching(NSPredicate(
+            format: "identifier IN %@", identifiers)).firstMatch
+        let nativePicker = app.descendants(matching: .any)
+            .matching(identifier: "Browse View (Picker)").firstMatch
+        // #458 的 iPhone 文件选择器确实停留在 Recents：原生 AX 有 File View、
+        // DOC.browsingRoot 和底部 Browse，但没有 iPad 使用的 Browse View (Picker)。
+        let nativeRoot = app.descendants(matching: .any).matching(NSPredicate(
+            format: "identifier BEGINSWITH %@", "DOC.browsingRoot Source:")).firstMatch
+        let nativeFileView = app.collectionViews["File View"]
+        let nativeDocumentBar = app.navigationBars["FullDocumentManagerViewControllerNavigationBar"]
+        let back = app.navigationBars.buttons.matching(NSPredicate(
+            format: "label IN %@", ["Browse", "浏览"])).firstMatch
+        let tab = app.tabBars.buttons.matching(NSPredicate(
+            format: "label IN %@", ["Browse", "浏览"])).firstMatch
+        let browseButton = app.buttons.matching(NSPredicate(
+            format: "label IN %@", ["Browse", "浏览"])).firstMatch
+        func waitForNavigation() -> Bool {
+            // iPad 与 iPhone 的系统原生页面形态不同；仍必须最终找到真实提供器和 Shared 目录。
+            if provider.exists || nativePicker.exists || nativeRoot.exists ||
+                nativeFileView.exists || nativeDocumentBar.exists ||
+                sidebar.exists || back.exists || tab.exists || browseButton.exists {
+                return true
+            }
+            return nativePicker.waitForExistence(timeout: 8) ||
+                nativeRoot.waitForExistence(timeout: 8) ||
+                nativeFileView.waitForExistence(timeout: 8) ||
+                provider.waitForExistence(timeout: 8)
+        }
+        var navigationReady = waitForNavigation()
+        if !navigationReady {
+            MobileUITestNavigation.capture(app, name: "Files native navigation unavailable", test: self)
+            // 取证会读取新 AX 层级；仅对真实位置或原生选择器重新查询一次。
+            let freshProvider = app.descendants(matching: .any).matching(NSPredicate(
+                format: "identifier IN %@", identifiers)).firstMatch
+            navigationReady = freshProvider.waitForExistence(timeout: 8) ||
+                nativePicker.waitForExistence(timeout: 8)
+        }
+        XCTAssertTrue(navigationReady, app.debugDescription)
+        guard navigationReady else { return }
+        // 已经显示位置列表时，不再点击侧栏按钮把它收起。
+        if !provider.exists && sidebar.exists && sidebar.isHittable { sidebar.tap() }
         for _ in 0..<3 {
-            let back = app.navigationBars.buttons.matching(NSPredicate(format: "label IN %@", ["Browse", "浏览"])).firstMatch
-            let tab = app.tabBars.buttons.matching(NSPredicate(format: "label IN %@", ["Browse", "浏览"])).firstMatch
-            // 标签切换、返回位置列表是不同导航步骤，各自等待；不能耗尽后续步骤的期限。
-            XCTAssertTrue(ready.waitForExistence(timeout: 8), app.debugDescription)
+            XCTAssertTrue(waitForNavigation(), app.debugDescription)
             if provider.exists { break }
             if back.exists {
                 // 冷启动时返回按钮先于目录页面出现；等搜索栏载入，避免在空白过渡页耗尽导航步骤。
                 XCTAssertTrue(app.navigationBars.searchFields.firstMatch.waitForExistence(timeout: 30), app.debugDescription)
+                XCTAssertTrue(back.isHittable, app.debugDescription)
                 back.tap()
+            } else if tab.exists {
+                XCTAssertTrue(tab.isHittable, app.debugDescription)
+                if !tab.isSelected { tab.tap() }
+            } else if browseButton.exists {
+                // 只有仍在 Recents 等页面、实际 Browse 可点时才执行一次纯导航。
+                XCTAssertTrue(browseButton.isHittable, app.debugDescription)
+                if !browseButton.isSelected { browseButton.tap() }
+            } else if sidebar.exists && sidebar.isHittable {
+                sidebar.tap()
             }
-            else if tab.exists { tab.tap() }
         }
         let location: XCUIElement
         if provider.waitForExistence(timeout: 8) {
@@ -183,15 +238,20 @@ final class MobileFilesProviderUITests: XCTestCase {
                 let edit = app.buttons.matching(NSPredicate(format: "label IN %@", ["Edit Sidebar", "编辑边栏", "Edit", "编辑"])).firstMatch
                 XCTAssertTrue(edit.waitForExistence(timeout: 5), app.debugDescription); edit.tap()
                 // 系统未给位置开关独立标识，按同一行的实际坐标匹配，不能误触其他位置。
-                let locationSwitch = app.switches.allElementsBoundByIndex.first {
-                    abs($0.frame.midY - provider.frame.midY) < 2
+                func locationSwitch() -> XCUIElement? {
+                    // 系统 AX 索引可能在状态改变后更新；每次按本位置行重新定位。
+                    let rowY = provider.frame.midY
+                    return app.switches.allElementsBoundByIndex.first { abs($0.frame.midY - rowY) < 2 }
                 }
-                XCTAssertNotNil(locationSwitch, app.debugDescription)
-                if let locationSwitch {
-                    // 同时验证用户可以从系统关闭再开启本测试位置，不触碰其他提供器。
-                    if locationSwitch.value as? String == "1" { locationSwitch.tap(); waitValue(locationSwitch, "0") }
-                    locationSwitch.tap(); waitValue(locationSwitch, "1")
+                guard let current = locationSwitch() else { XCTFail("无法定位本提供器的系统开关"); return }
+                if current.value as? String == "1" {
+                    current.tap()
+                    waitValue(current, "0", in: app)
                 }
+                guard let enabling = locationSwitch() else { XCTFail("关闭后无法重新定位本提供器开关"); return }
+                XCTAssertTrue(enabling.isHittable)
+                enabling.press(forDuration: 0.15)
+                waitValue(enabling, "1", in: app)
                 app.buttons.matching(NSPredicate(format: "label IN %@", ["Done", "完成"])).firstMatch.tap()
             }
             screenshot(app, "files-native-locations")
@@ -203,15 +263,32 @@ final class MobileFilesProviderUITests: XCTestCase {
             location = name
         }
         location.tap()
+        // iPad 的内嵌“文件”选择器曾在首次点击本提供器后仍选中 Recents。
+        // 仅当真实目录未出现、Recents 仍选中且提供器可点击时，补一次只读位置选择。
+        if !sharedFolder(in: app).waitForExistence(timeout: 8) {
+            let recents = app.cells["DOC.sidebar.item.Recents"]
+            if recents.exists && recents.isSelected &&
+                provider.exists && !provider.isSelected && provider.isHittable &&
+                !app.alerts["Turn On “LanStash”?"].exists {
+                MobileUITestNavigation.capture(app, name: "Files picker stayed on Recents", test: self)
+                provider.press(forDuration: 0.15)
+            }
+        }
         // 系统选择器可能再次要求启用本测试提供器；只处理已观察到的专属确认。
         let activation = app.alerts["Turn On “LanStash”?"]
-        // 系统启用提示在点击位置后可能晚于 3 秒出现；未及时处理会遮挡后续共享目录查找。
-        if activation.waitForExistence(timeout: 15) {
+        // 系统启用确认可能在首次选中和导航恢复后的再次选中分别出现。
+        // 只响应实际存在的本提供器专属提示；每次提示只确认一次，不重发其他写操作。
+        func acceptActivation(ifPresentedWithin timeout: TimeInterval) -> Bool {
+            guard activation.waitForExistence(timeout: timeout) else { return false }
             let turnOn = activation.buttons["Turn On"]
             XCTAssertTrue(turnOn.isEnabled); XCTAssertTrue(turnOn.isHittable)
             screenshot(app, "files-system-picker-enable-confirmation")
             turnOn.press(forDuration: 0.15)
-            XCTAssertTrue(activation.waitForNonExistence(timeout: 5), app.debugDescription)
+            let dismissed = activation.waitForNonExistence(timeout: 5)
+            XCTAssertTrue(dismissed, app.debugDescription)
+            return dismissed
+        }
+        if acceptActivation(ifPresentedWithin: 15) {
             // 启用后的系统导航可能仍在进行；先检查目录，避免用旧页面坐标点击正在变化的位置列表。
             if !sharedFolder(in: app).waitForExistence(timeout: 8) {
                 MobileUITestNavigation.capture(app, name: "Files enabled location navigation", test: self)
@@ -223,8 +300,29 @@ final class MobileFilesProviderUITests: XCTestCase {
                 }
                 XCTAssertTrue(location.wait(for: \.isHittable, toEqual: true, timeout: 5), app.debugDescription)
                 location.press(forDuration: 0.15)
+                // 恢复导航重新选择位置后，系统可能再次弹出独立的开启提示。
+                _ = acceptActivation(ifPresentedWithin: 5)
             }
         }
+        // 系统文件应用曾在选中提供器后仍停留“我的 iPhone”空目录。
+        // 只在确认实际落入本机目录且共享文件夹不存在时，返回位置列表并重新选择同一提供器。
+        let localStorageRoot = app.descendants(matching: .any).matching(NSPredicate(
+            format: "identifier BEGINSWITH %@", "DOC.browsingRoot Source: com.apple.FileProvider.LocalStorage")).firstMatch
+        if !sharedFolder(in: app).waitForExistence(timeout: 20), localStorageRoot.exists {
+            MobileUITestNavigation.capture(app, name: "Files location remained in local storage", test: self)
+            let back = app.navigationBars.buttons.matching(NSPredicate(
+                format: "label IN %@", ["Browse", "浏览"])).firstMatch
+            XCTAssertTrue(back.wait(for: \.isHittable, toEqual: true, timeout: 8), app.debugDescription)
+            back.press(forDuration: 0.15)
+            let selected = app.descendants(matching: .any).matching(NSPredicate(
+                format: "identifier IN %@", identifiers)).firstMatch
+            XCTAssertTrue(selected.wait(for: \.isHittable, toEqual: true, timeout: 8), app.debugDescription)
+            selected.press(forDuration: 0.15)
+            // #448 的失败层级明确显示此时仍有“Turn On LanStash”系统弹窗遮挡共享目录。
+            _ = acceptActivation(ifPresentedWithin: 5)
+        }
+        // 仍要求真正进入系统 File Provider 目录，不以点过位置项替代内容验收。
+        XCTAssertTrue(sharedFolder(in: app).waitForExistence(timeout: 20), app.debugDescription)
     }
 
     private func tapSwitch(_ row: XCUIElement) {
@@ -232,6 +330,21 @@ final class MobileFilesProviderUITests: XCTestCase {
         let control = row.switches.firstMatch
         XCTAssertTrue(control.waitForExistence(timeout: 5))
         control.tap()
+    }
+
+    private func confirmEditing(_ row: XCUIElement, in app: XCUIApplication, title: String,
+                                file: StaticString = #filePath, line: UInt = #line) {
+        let confirmation = app.alerts.firstMatch
+        XCTAssertTrue(confirmation.waitForExistence(timeout: 5), app.debugDescription, file: file, line: line)
+        let button = confirmation.buttons[title]
+        XCTAssertTrue(button.wait(for: \.isHittable, toEqual: true, timeout: 5), app.debugDescription, file: file, line: line)
+        XCTAssertTrue(button.isEnabled, file: file, line: line)
+        // 确认只提交一次；先核对提示确已关闭，再等待系统授权完成后的开关状态。
+        button.press(forDuration: 0.15)
+        let dismissed = confirmation.waitForNonExistence(timeout: 5)
+        if !dismissed { MobileUITestNavigation.capture(app, name: "Files editing confirmation retained", test: self) }
+        XCTAssertTrue(dismissed, "编辑授权确认尚未关闭", file: file, line: line)
+        waitValue(row, "1", in: app, file: file, line: line)
     }
 
     private func scrollConfirmation(_ app: XCUIApplication, name: String) {
@@ -243,9 +356,17 @@ final class MobileFilesProviderUITests: XCTestCase {
         XCTAssertTrue(app.alerts.buttons["取消"].isHittable)
     }
 
-    private func waitValue(_ element: XCUIElement, _ value: String) {
-        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(
-            predicate: NSPredicate(format: "value == %@", value), object: element)], timeout: 10), .completed)
+    private func waitValue(_ element: XCUIElement, _ value: String, in app: XCUIApplication,
+                           file: StaticString = #filePath, line: UInt = #line) {
+        // SwiftUI 外层是开关行；与点击使用同一实际控件，并等待授权回读结束后恢复可用。
+        // 系统 Files 的原生开关没有嵌套控件，直接读取其自身。
+        let nested = element.switches.firstMatch
+        let control = nested.exists ? nested : element
+        let result = XCTWaiter.wait(for: [XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "exists == true AND enabled == true AND value == %@", value), object: control)], timeout: 10)
+        if result != .completed { MobileUITestNavigation.capture(app, name: "Files switch state \(value)", test: self) }
+        XCTAssertEqual(result, .completed, "文件位置开关尚未完成状态更新", file: file, line: line)
+        XCTAssertEqual(element.value as? String, value, "文件位置开关行与实际控件的状态不一致", file: file, line: line)
     }
 
     private func element(_ id: String, _ app: XCUIApplication) -> XCUIElement {

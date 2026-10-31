@@ -113,25 +113,59 @@ final class MobileChatGroupCreationUITests: XCTestCase {
         XCTAssertTrue(form.waitForExistence(timeout: 5))
         let navigation = app.navigationBars.containing(.button, identifier: "chat-create-submit").firstMatch
         for _ in 0..<6 {
-            var visible = form.frame.intersection(app.frame)
-            let top = max(visible.minY, navigation.frame.maxY)
+            let bounds = form.frame.intersection(app.frame)
+            guard !bounds.isNull, !bounds.isInfinite, !bounds.isEmpty,
+                  bounds.minX.isFinite, bounds.minY.isFinite,
+                  bounds.width > 24, bounds.height > 24 else {
+                MobileUITestNavigation.capture(app, name: "Group form invalid viewport", test: self)
+                XCTFail("群聊表单可见区域无效")
+                return
+            }
+            // #458 的大字号弹层没有匹配到含提交按钮的 NavigationBar；
+            // 不能用缺失元素的无限 frame 计算手势坐标。
+            let bar = navigation.exists ? navigation : app.navigationBars.firstMatch
+            let rawTop = bar.exists ? bar.frame.maxY : bounds.minY
+            let top = max(bounds.minY, rawTop.isFinite ? rawTop : bounds.minY)
             let keyboard = app.keyboards.firstMatch
-            let bottom = keyboard.exists ? min(visible.maxY, keyboard.frame.minY) : visible.maxY
-            visible = CGRect(x: visible.minX, y: top, width: visible.width, height: bottom - top).insetBy(dx: 8, dy: 8)
-            if element.exists, !element.frame.isEmpty, visible.contains(element.frame) { return }
-            // iPad 弹窗和键盘有独立区域；只在表单的可见范围内滚动。
+            let rawBottom = keyboard.exists ? keyboard.frame.minY : bounds.maxY
+            let bottom = min(bounds.maxY, rawBottom.isFinite ? rawBottom : bounds.maxY)
+            guard bottom > top + 20 else {
+                MobileUITestNavigation.capture(app, name: "Group form occluded by keyboard", test: self)
+                XCTFail("群聊表单没有足够的可操作区域")
+                return
+            }
+            let visible = CGRect(x: bounds.minX, y: top, width: bounds.width,
+                                 height: bottom - top).insetBy(dx: 8, dy: 8)
+            if element.exists {
+                let frame = element.frame
+                if !frame.isNull, !frame.isInfinite, !frame.isEmpty,
+                   frame.midX.isFinite, frame.midY.isFinite, visible.contains(frame) { return }
+            }
+            // iPad 弹窗和键盘有独立区域；只用已验证有限坐标滚动表单。
             let origin = app.coordinate(withNormalizedOffset: .zero)
-            origin.withOffset(CGVector(dx: visible.midX, dy: visible.minY + visible.height * 0.8))
-                .press(forDuration: 0.05, thenDragTo: origin.withOffset(CGVector(dx: visible.midX, dy: visible.minY + visible.height * 0.2)))
+            let x = visible.midX - app.frame.minX
+            let upper = visible.minY + visible.height * 0.2 - app.frame.minY
+            let lower = visible.minY + visible.height * 0.8 - app.frame.minY
+            origin.withOffset(CGVector(dx: x, dy: lower))
+                .press(forDuration: 0.05, thenDragTo: origin.withOffset(CGVector(dx: x, dy: upper)))
         }
+        MobileUITestNavigation.capture(app, name: "Group target outside visible form", test: self)
         XCTFail("群聊表单中的目标控件未完整显示")
     }
     private func tapVisible(_ element: XCUIElement, _ app: XCUIApplication) {
         reveal(element, app)
         XCTAssertTrue(element.isEnabled)
-        // 系统自动点击会错误地再次滚动；对已完整可见的控件仅点击一次，并由后续状态断言确认结果。
+        // 系统自动点击会错误地再次滚动；只点击经过有限几何校验的真实控件。
         let frame = element.frame
-        app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: frame.midX, dy: frame.midY)).tap()
+        guard !frame.isNull, !frame.isInfinite, !frame.isEmpty,
+              frame.midX.isFinite, frame.midY.isFinite,
+              app.frame.contains(CGPoint(x: frame.midX, y: frame.midY)) else {
+            MobileUITestNavigation.capture(app, name: "Group target invalid tap frame", test: self)
+            XCTFail("群聊操作控件没有有效的屏幕点击位置")
+            return
+        }
+        app.coordinate(withNormalizedOffset: .zero)
+            .withOffset(CGVector(dx: frame.midX - app.frame.minX, dy: frame.midY - app.frame.minY)).tap()
     }
     private func element(_ id: String, _ app: XCUIApplication) -> XCUIElement {
         app.descendants(matching: .any).matching(identifier: id).firstMatch

@@ -74,10 +74,19 @@ final class MobileChatManagementUITests: XCTestCase {
         }
     }
     private func openAnnouncements(_ app: XCUIApplication) {
-        element("chat-more", app).tap(); element("chat-announcements-list", app).tap()
+        let announcements = app.buttons["chat-announcements-list"]
+        guard MobileUITestNavigation.openMenu(app.buttons["chat-more"], showing: announcements, in: app, test: self) else { return }
+        XCTAssertTrue(announcements.isEnabled); announcements.tap()
+        let page = app.navigationBars.matching(NSPredicate(format: "identifier IN %@", ["Group Announcements", "群公告"])).firstMatch
+        let appeared = page.waitForExistence(timeout: 8)
+        if !appeared { MobileUITestNavigation.capture(app, name: "Announcements presentation", test: self) }
+        XCTAssertTrue(appeared, "群公告页面尚未呈现")
     }
     private func openManagement(_ app: XCUIApplication) {
-        element("chat-more", app).tap(); element("chat-manage-conversations", app).tap()
+        let management = app.buttons["chat-manage-conversations"]
+        guard MobileUITestNavigation.openMenu(app.buttons["chat-more"], showing: management, in: app, test: self) else { return }
+        XCTAssertTrue(management.isEnabled); management.tap()
+        XCTAssertTrue(app.navigationBars["Manage conversations"].waitForExistence(timeout: 8))
     }
     private func launch(state: String = "chat-management-content", chinese: Bool = false, dark: Bool = false) -> XCUIApplication {
         continueAfterFailure = false
@@ -88,7 +97,7 @@ final class MobileChatManagementUITests: XCTestCase {
     private func openChat(_ app: XCUIApplication, chinese: Bool = false) {
         XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 20))
         navigate("settings", title: chinese ? "App 设置" : "App settings", app)
-        let toggle = element("mobile.settings.module.chat", app)
+        let toggle = app.switches["mobile.settings.module.chat"]
         for _ in 0..<5 { if toggle.exists && toggle.isHittable { break }; app.swipeUp() }
         XCTAssertTrue(toggle.waitForExistence(timeout: 5))
         MobileUITestNavigation.enableModule(app, module: "chat", test: self)

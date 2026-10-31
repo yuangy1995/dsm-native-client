@@ -28,7 +28,18 @@ enum MobileUITestNavigation {
         // 开启聊天会插入通知区域；大字号下原开关会移出可见列表，先滚回原控件再读取新值。
         revealModule(toggle, in: app)
         let enabled = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", "1"), object: toggle)
-        let result = XCTWaiter.wait(for: [enabled], timeout: 10)
+        var result = XCTWaiter.wait(for: [enabled], timeout: 10)
+        if result != .completed {
+            capture(app, name: "Enable \(module) initial gesture", test: test)
+            // 首次滑动未改变本地功能开关时，先核实仍为关闭再补一次原生点击；绝不盲目反向切换。
+            revealModule(toggle, in: app)
+            if toggle.value as? String == "0", control.exists, control.isEnabled, control.isHittable {
+                control.tap()
+                // XCTest 不允许同一个 expectation 再次 wait；补点击后必须重新创建等待对象。
+                let retried = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", "1"), object: toggle)
+                result = XCTWaiter.wait(for: [retried], timeout: 10)
+            }
+        }
         if result != .completed { capture(app, name: "Enable \(module)", test: test) }
         XCTAssertEqual(result, .completed, "功能开关没有开启：\(module)", file: file, line: line)
     }
@@ -93,6 +104,29 @@ enum MobileUITestNavigation {
         }
     }
 
+    /// 菜单展开是独立的只读导航步骤；等实际菜单项出现后才允许调用方继续操作。
+    @discardableResult
+    static func openMenu(_ menu: XCUIElement, showing item: XCUIElement, in app: XCUIApplication,
+                         test: XCTestCase, file: StaticString = #filePath, line: UInt = #line) -> Bool {
+        let ready = menu.wait(for: \.isHittable, toEqual: true, timeout: 10)
+        if !ready { capture(app, name: "Menu readiness", test: test) }
+        XCTAssertTrue(ready, "菜单入口尚未可操作", file: file, line: line)
+        guard ready else { return false }
+        menu.tap()
+        // 系统菜单已暴露标识时仍可能返回无限坐标或零尺寸；此时不能提交点击。
+        let itemReady = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            guard item.exists else { return false }
+            let frame = item.frame
+            return frame.origin.x.isFinite && frame.origin.y.isFinite
+                && frame.width.isFinite && frame.height.isFinite && frame.width > 0 && frame.height > 0
+                && item.isHittable
+        }, object: item)
+        let result = XCTWaiter.wait(for: [itemReady], timeout: 10)
+        if result != .completed { capture(app, name: "Menu presentation", test: test) }
+        XCTAssertEqual(result, .completed, "菜单项尚未完成布局或不可操作", file: file, line: line)
+        return result == .completed
+    }
+
     static func capture(_ app: XCUIApplication, name: String, test: XCTestCase) {
         let hierarchy = XCTAttachment(string: app.debugDescription)
         hierarchy.name = "\(name) hierarchy"; hierarchy.lifetime = .keepAlways; test.add(hierarchy)
@@ -103,7 +137,10 @@ enum MobileUITestNavigation {
     private static func revealModule(_ toggle: XCUIElement, in app: XCUIApplication) {
         let settings = app.collectionViews["mobile.settings.page"]
         for _ in 0..<8 {
-            if toggle.exists && toggle.isHittable { return }
+            // 外层 SwiftUI 开关行可命中，并不代表其中接收触控的原生 Switch 已在屏幕内。
+            // 须同时核对实际控件，避免在不可操作的子控件上耗尽 XCTest 查询时间。
+            let control = toggle.switches.firstMatch
+            if toggle.exists && toggle.isHittable && control.exists && control.isHittable { return }
             settings.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.8)).press(forDuration: 0.1,
                 thenDragTo: settings.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.3)),
                 withVelocity: .slow, thenHoldForDuration: 0.2)

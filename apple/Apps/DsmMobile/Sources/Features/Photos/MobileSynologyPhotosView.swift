@@ -542,6 +542,15 @@ private struct MobileSynologyPhotosContent: View {
                 .disabled(model.isBrowsingBlocked).accessibilityIdentifier("mobile.photos.selection.loaded")
             if let albums = session.albums {
                 Menu {
+                    // 最大动态字号下原生菜单可能裁剪尾部操作，删除入口靠前仍须二次确认。
+                    if let folders = session.folders {
+                        Button(L10n.string("photos.delete.action"), role: .destructive) {
+                            if model.selectedFolders.isEmpty { model.requestDeletion(model.selectedPhotos) }
+                            else { folders.begin(.delete) }
+                        }.disabled(!model.canDeleteSelection || model.selectedItemCount > 100)
+                            .accessibilityIdentifier("mobile.photos.selection.delete")
+                        Divider()
+                    }
                     MobilePhotoExportActions(session: session)
                     Divider()
                     if model.selectedCategory == .similar {
@@ -552,11 +561,6 @@ private struct MobileSynologyPhotosContent: View {
                     }
                     if let folders = session.folders {
                         MobilePhotoFolderActions(folders: folders)
-                        Button(L10n.string("photos.delete.action"), role: .destructive) {
-                            if model.selectedFolders.isEmpty { model.requestDeletion(model.selectedPhotos) }
-                            else { folders.begin(.delete) }
-                        }.disabled(!model.canDeleteSelection || model.selectedItemCount > 100)
-                            .accessibilityIdentifier("mobile.photos.selection.delete")
                         Divider()
                     }
                     if model.selectedFolders.isEmpty {
