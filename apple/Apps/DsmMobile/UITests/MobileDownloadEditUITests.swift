@@ -87,8 +87,16 @@ final class MobileDownloadEditUITests: XCTestCase {
     }
     private func openBatch(_ app: XCUIApplication) {
         toolbar("downloads.select", labels: ["Select tasks", "选择任务"], app)
-        let all = button("downloads.select-all", app); XCTAssertTrue(all.waitForExistence(timeout: 8)); all.tap()
-        button("downloads.batch.edit", app).tap()
+        let all = button("downloads.select-all", app)
+        if !all.waitForExistence(timeout: 8) {
+            MobileUITestNavigation.capture(app, name: "Downloads selection first presentation", test: self)
+            // 多选只改变当前页面模式；首次导航未生效且入口仍在时才补一次，不重提任何任务编辑。
+            let opener = button("downloads.select", app)
+            if opener.exists && opener.isEnabled && opener.isHittable && !all.exists { opener.tap() }
+        }
+        XCTAssertTrue(all.waitForExistence(timeout: 8)); XCTAssertTrue(all.isHittable); all.tap()
+        let edit = button("downloads.batch.edit", app)
+        XCTAssertTrue(edit.waitForExistence(timeout: 8)); edit.tap()
     }
     private func openRecord(_ app: XCUIApplication) {
         toolbar("downloads.records", labels: ["Recent actions", "最近操作"], app)

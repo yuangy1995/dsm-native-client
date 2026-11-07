@@ -106,7 +106,8 @@ final class MobileNasReadUITests: XCTestCase {
     }
 
     private func open(_ page: String, in app: XCUIApplication) {
-        let link = element("mobile.nas.page.\(page)", in: app)
+        // 导航入口在真实 AX 中是 Button；避免 Any 后代扫描触发全树快照超时。
+        let link = app.buttons["mobile.nas.page.\(page)"]
         let list = app.collectionViews["mobile.nas.navigation"]
         XCTAssertTrue(list.waitForExistence(timeout: 8))
         for _ in 0..<14 {

@@ -89,8 +89,8 @@ final class MobileChatSendUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Sample chat"].firstMatch.waitForExistence(timeout: 8))
     }
     private func navigate(_ id: String, _ title: String, _ app: XCUIApplication) {
-        if app.tabBars.buttons[title].exists { app.tabBars.buttons[title].tap() }
-        else { let item = element("mobile.navigation.\(id)", app); XCTAssertTrue(item.waitForExistence(timeout: 5)); item.tap() }
+        // 大字号下点击标签栏并不代表设置页已经出现，复用带有页面就绪检查的导航。
+        MobileUITestNavigation.open(app, destination: id, title: title, test: self)
     }
     private func openConversation(_ app: XCUIApplication) {
         app.staticTexts["Sample chat"].firstMatch.tap()

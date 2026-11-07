@@ -49,8 +49,76 @@ final class MobileNasStorageUITests: XCTestCase {
         screenshot(app, "Quick drive test confirmation")
         element("mobile.nas.disk.confirm", app).press(forDuration: 0.15)
         assertTestState("Quick test running", app)
-        reveal("mobile.nas.disk.stop", in: app).tap()
-        XCTAssertTrue(element("mobile.nas.disk.confirm", app).waitForExistence(timeout: 5)); element("mobile.nas.disk.confirm", app).press(forDuration: 0.15)
+        // 状态轮询期间 SwiftUI 会暂时移除操作按钮；先滚动真实详情表单，
+        // 等 Stop 确实可点才执行唯一一次停止操作，不重复启动或停止提交。
+        let detailForm = app.collectionViews["mobile.nas.disk.details"]
+        XCTAssertTrue(detailForm.waitForExistence(timeout: 8))
+        let stop = app.buttons["mobile.nas.disk.stop"]
+        var stopPoint: CGPoint?
+        var stopTitle: String?
+        for _ in 0..<8 {
+            if stop.waitForExistence(timeout: 2) {
+                let frame = stop.frame
+                let navigationBottom = app.navigationBars.allElementsBoundByIndex
+                    .map { $0.frame.maxY }.filter { $0.isFinite }.max() ?? app.frame.minY
+                let tab = app.tabBars.firstMatch
+                let bottom = tab.exists ? min(app.frame.maxY - 8, tab.frame.minY - 8) : app.frame.maxY - 8
+                let top = max(app.frame.minY + 8, navigationBottom + 8)
+                let content = CGRect(x: app.frame.minX, y: top, width: app.frame.width,
+                                     height: max(0, bottom - top))
+                let visible = frame.intersection(detailForm.frame).intersection(content)
+                // #461 的 Stop 位于 AX 树，但 hittable 查询会抛无效激活点；
+                // 先校验有限可见矩形，再用可见区域中心进行一次纯导航。
+                if !frame.isNull, !frame.isInfinite, !frame.isEmpty,
+                   frame.midX.isFinite, frame.midY.isFinite,
+                   !visible.isNull, !visible.isInfinite, !visible.isEmpty,
+                   visible.width > 8, visible.height > 8,
+                   stop.isEnabled {
+                    // #461 即使 AX 矩形有效，读取 isHittable 仍会抛无效激活点；
+                    // 仅使用已核验的可见交集坐标进行一次纯导航，后续必须核对停止确认标题。
+                    stopPoint = CGPoint(x: visible.midX, y: visible.midY)
+                    stopTitle = stop.label
+                    break
+                }
+            }
+            scroll(detailForm, upward: true, in: app)
+        }
+        if stopPoint == nil {
+            let snapshot = XCTAttachment(string: app.debugDescription)
+            snapshot.name = "Drive stop control unavailable hierarchy"; snapshot.lifetime = .keepAlways; add(snapshot)
+            screenshot(app, "Drive stop control unavailable")
+        }
+        XCTAssertNotNil(stopPoint, "快速检测已在运行但停止入口不可操作")
+        if let stopPoint {
+            app.coordinate(withNormalizedOffset: .zero).withOffset(
+                CGVector(dx: stopPoint.x - app.frame.minX, dy: stopPoint.y - app.frame.minY)
+            ).tap()
+        }
+        let stopConfirmation = element("mobile.nas.disk.confirm", app)
+        if !stopConfirmation.waitForExistence(timeout: 5) {
+            let hierarchy = XCTAttachment(string: app.debugDescription)
+            hierarchy.name = "Drive stop navigation did not present confirmation"
+            hierarchy.lifetime = .keepAlways; add(hierarchy)
+            screenshot(app, "Drive stop navigation without confirmation")
+            // 只在检测仍运行、原停止控件仍在且没有确认弹层时补一次纯导航。
+            // 两次导航均不会提交停止；真实停止只允许下方确认按钮提交一次。
+            let current = element("mobile.nas.disk.current", app)
+            let retryStop = app.buttons["mobile.nas.disk.stop"]
+            let retryFrame = retryStop.frame
+            let visible = retryFrame.intersection(detailForm.frame).intersection(app.frame)
+            if let stopTitle,
+               !stopConfirmation.exists,
+               current.value as? String == "Quick test running",
+               retryStop.exists, retryStop.isEnabled, retryStop.label == stopTitle,
+               !retryFrame.isNull, !retryFrame.isInfinite, !retryFrame.isEmpty,
+               !visible.isNull, !visible.isInfinite, !visible.isEmpty,
+               visible.width > 8, visible.height > 8 {
+                retryStop.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+            }
+        }
+        XCTAssertTrue(stopConfirmation.waitForExistence(timeout: 5))
+        XCTAssertEqual(stopConfirmation.label, stopTitle ?? "", "必须确认为停止，而非重复启动硬盘检测")
+        stopConfirmation.press(forDuration: 0.15)
         assertTestState("No test running", app)
         screenshot(app, "Drive test stopped and history retained")
     }

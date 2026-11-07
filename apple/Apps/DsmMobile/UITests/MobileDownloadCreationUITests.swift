@@ -160,7 +160,21 @@ final class MobileDownloadCreationUITests: XCTestCase {
     private func chooseFolder(_ app: XCUIApplication, chinese: Bool = false) {
         let destination = button("downloads.create.destination", app); scrollTo(destination, app); destination.tap()
         let folder = element("files.folder-picker.folder./fixture", app)
-        XCTAssertTrue(folder.waitForExistence(timeout: 8)); folder.tap()
+        var presented = folder.waitForExistence(timeout: 8)
+        if !presented {
+            MobileUITestNavigation.capture(app, name: "Download folder picker initial navigation", test: self)
+            // 如果选择器已经出现但目录加载失败，不重开；只有原表单仍可操作才恢复一次纯导航。
+            let choose = app.buttons[chinese ? "选择" : "Choose"].firstMatch
+            if !choose.exists && !app.alerts.firstMatch.exists
+                && app.collectionViews["downloads.creation.form"].exists
+                && destination.exists && destination.isEnabled && destination.isHittable {
+                destination.press(forDuration: 0.15)
+                presented = folder.waitForExistence(timeout: 8)
+            }
+        }
+        XCTAssertTrue(presented, "目录选择器尚未显示真实 fixture 目录")
+        guard presented else { return }
+        folder.tap()
         let choose = app.buttons[chinese ? "选择" : "Choose"].firstMatch
         XCTAssertTrue(choose.waitForExistence(timeout: 8)); choose.tap()
         XCTAssertTrue(element("downloads.create.destination", app).label.contains("fixture"))

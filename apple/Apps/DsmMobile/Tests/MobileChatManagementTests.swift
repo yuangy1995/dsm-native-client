@@ -31,6 +31,37 @@ final class MobileChatManagementTests: XCTestCase {
     }
     private func conversations(_ repo: MobileReadOnlyChatRepository) async throws -> [ChatConversation] { try await repo.listConversations() }
 
+    func test纯公告加载夹具收到取消后结束且不产生成功响应或写入() async {
+        let transport = MobileChatManagementUITransport(state: "chat-management-loading")
+        let request: URLRequest = {
+            var request = URLRequest(url: URL(string: "https://fixture.example.invalid/entry.cgi")!)
+            request.httpMethod = "POST"
+            request.httpBody = Data("api=\(DsmAPIName.chatPost)&method=search&has=pin&channel_id=27".utf8)
+            return request
+        }()
+        let finished = expectation(description: "公告加载读取响应取消")
+        let task = Task {
+            defer { finished.fulfill() }
+            do { _ = try await transport.send(request); XCTFail("纯加载不得返回成功响应") }
+            catch is CancellationError {}
+            catch { XCTFail("应返回取消错误：\(error)") }
+        }
+        defer { task.cancel() }
+        let deadline = ContinuousClock.now.advanced(by: .seconds(2))
+        while await transport.counts().reads == 0 {
+            guard ContinuousClock.now < deadline else {
+                XCTFail("公告加载读取未在 2 秒内开始")
+                return
+            }
+            await Task.yield()
+        }
+        task.cancel()
+        let result = await XCTWaiter.fulfillment(of: [finished], timeout: 2)
+        XCTAssertEqual(result, .completed)
+        let counts = await transport.counts()
+        XCTAssertEqual(counts.reads, 1); XCTAssertTrue(counts.writes.isEmpty)
+    }
+
     func test置顶及取消绑定原消息并回读最终状态() async throws {
         let transport = MobileChatManagementUITransport(); let (model, repo) = try await make(transport)
         let original = try await message(repo)

@@ -64,7 +64,26 @@ final class MobileChatTimedActionUITests: XCTestCase {
         screenshot(app, "Chinese dark accessible schedule list")
         let search = app.searchFields["搜索消息"].firstMatch
         for _ in 0..<3 { if search.isHittable { break }; app.swipeDown() }
-        XCTAssertTrue(search.waitForExistence(timeout: 5)); search.tap(); search.typeText("missing")
+        XCTAssertTrue(search.waitForExistence(timeout: 5))
+        XCTAssertTrue(search.wait(for: \.isHittable, toEqual: true, timeout: 5))
+        search.tap()
+        // 大字号下搜索栏的焦点切换晚于可点击状态；未获得焦点时不能发送输入事件。
+        let focused = { XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "hasKeyboardFocus == true"), object: search) }
+        var focus = XCTWaiter.wait(for: [focused()], timeout: 5)
+        if focus != .completed {
+            MobileUITestNavigation.capture(app, name: "Timed message search did not receive focus", test: self)
+            // 此时尚未输入或提交任何消息，只允许对原搜索框恢复一次聚焦。
+            if search.exists && search.isEnabled && search.isHittable && !app.alerts.firstMatch.exists {
+                search.tap()
+                focus = XCTWaiter.wait(for: [focused()], timeout: 5)
+            }
+        }
+        XCTAssertEqual(focus, .completed, "搜索框必须真实取得键盘焦点")
+        guard focus == .completed else { return }
+        search.typeText("missing")
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "value == %@", "missing"), object: search)], timeout: 5), .completed)
         XCTAssertTrue(app.staticTexts["没有匹配的消息"].waitForExistence(timeout: 5))
         screenshot(app, "Chinese filtered empty schedule list")
     }

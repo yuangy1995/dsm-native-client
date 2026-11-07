@@ -107,14 +107,87 @@ import XCTest
         return app
     }
     private func openCreation(_ app: XCUIApplication) {
-        ready(app.buttons["network.create.open"]); app.buttons["network.create.open"].tap()
+        let create = app.buttons["network.create.open"]
+        if !create.wait(for: \.isHittable, toEqual: true, timeout: 8) {
+            MobileUITestNavigation.capture(app, name: "Network create entry not hittable", test: self)
+            // 取消删除后的 sheet 如仍存在，只再取消一次，绝不提交删除。
+            let deletion = app.collectionViews["network.delete.form"]
+            if deletion.exists {
+                let cancel = app.buttons.matching(NSPredicate(format: "label IN %@", ["Cancel", "取消"])).firstMatch
+                if cancel.exists && cancel.isHittable { cancel.tap() }
+                XCTAssertTrue(deletion.waitForNonExistence(timeout: 8))
+            }
+            // 大字号工具栏可能将新增入口收入系统溢出菜单；仅展开原生菜单再核验入口。
+            let more = app.navigationBars.buttons["OverflowBarButtonItem"]
+            if !create.isHittable && more.exists && more.isHittable { more.tap() }
+        }
+        ready(create); create.tap()
         XCTAssertTrue(app.collectionViews["network.create.form"].waitForExistence(timeout: 8))
     }
     private func fill(_ id: String, _ text: String, _ app: XCUIApplication) {
-        let field = reveal("network.create.\(id)", app, list: "network.create.form")
-        ready(field); field.tap(); field.typeText(text)
-        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(
-            predicate: NSPredicate(format: "value == %@", text), object: field)], timeout: 5), .completed)
+        let identifier = "network.create.\(id)"
+        _ = reveal(identifier, app, list: "network.create.form")
+        let field = app.textFields[identifier].firstMatch
+        ready(field); field.tap()
+        // IPv6 开关展开后，输入框可点击并不代表已取得键盘焦点；先核验再发送文本。
+        let focused = { XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "hasKeyboardFocus == true"), object: field) }
+        var focus = XCTWaiter.wait(for: [focused()], timeout: 5)
+        if focus != .completed {
+            MobileUITestNavigation.capture(app, name: "Network input without keyboard focus", test: self)
+            // 键盘出现会改变可见区域；重新滚动同一字段后仅恢复一次聚焦，不提交表单。
+            _ = reveal(identifier, app, list: "network.create.form")
+            ready(field); field.tap()
+            focus = XCTWaiter.wait(for: [focused()], timeout: 5)
+        }
+        XCTAssertEqual(focus, .completed, "网络输入框未取得键盘焦点：\(id)")
+        guard focus == .completed else { return }
+        field.typeText(text)
+        let matches = { XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "value == %@", text), object: field) }
+        var result = XCTWaiter.wait(for: [matches()], timeout: 5)
+        if result != .completed {
+            let observed = field.value as? String ?? ""
+            let empty = observed.isEmpty || observed == field.placeholderValue
+            if observed == text {
+                // 等待到期与实际控件回读之间可能有竞态；仅在真实值完全一致时接受。
+                result = .completed
+            } else if empty || (text.hasPrefix(observed) && observed != text) {
+                // 只补齐实际缺失的字符，不重试任何创建提交。
+                let hierarchy = XCTAttachment(string: app.debugDescription)
+                hierarchy.name = "Network input interrupted hierarchy"; hierarchy.lifetime = .keepAlways; add(hierarchy)
+                screenshot("Network input interrupted before recovery")
+                if empty { field.tap() }
+                field.typeText(empty ? text : String(text.dropFirst(observed.count)))
+                result = XCTWaiter.wait(for: [matches()], timeout: 8)
+            } else if id == "ipv6-gateway" {
+                // #457 的 IPv6 网关焦点已建立并完成输入合成，但回读不是目标值。
+                // 仅限尚未提交的表单，留证后清空错误文本、核对清空，再重填一次。
+                MobileUITestNavigation.capture(app, name: "Network IPv6 gateway value diverged", test: self)
+                _ = reveal(identifier, app, list: "network.create.form")
+                ready(field); field.tap()
+                let refocused = XCTWaiter.wait(for: [focused()], timeout: 5)
+                XCTAssertEqual(refocused, .completed, "恢复 IPv6 网关输入前必须取得焦点")
+                if refocused == .completed {
+                    field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: observed.count))
+                    let cleared = XCTNSPredicateExpectation(predicate: NSPredicate(
+                        format: "value == %@ OR value == %@", "", field.placeholderValue ?? ""), object: field)
+                    let reset = XCTWaiter.wait(for: [cleared], timeout: 5)
+                    XCTAssertEqual(reset, .completed, "错误文本未被确认清空，禁止重新输入")
+                    if reset == .completed {
+                        field.typeText(text)
+                        result = XCTWaiter.wait(for: [matches()], timeout: 8)
+                    }
+                }
+            }
+        }
+        if result != .completed {
+            let hierarchy = XCTAttachment(string: app.debugDescription)
+            hierarchy.name = "Network input unmatched hierarchy"; hierarchy.lifetime = .keepAlways; add(hierarchy)
+            screenshot("Network input unmatched")
+        }
+        XCTAssertEqual(result, .completed, "输入未达到目标值：\(id)")
+        guard result == .completed else { return }
         // 结束当前输入并收起键盘，避免下方字段被遮挡且滚动停在仍有焦点的输入框。
         field.typeText("\n")
         XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5))

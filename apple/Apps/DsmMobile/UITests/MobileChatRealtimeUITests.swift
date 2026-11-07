@@ -37,14 +37,16 @@ final class MobileChatRealtimeUITests: XCTestCase {
     }
 
     func test离开聊天页后前台仍更新会话摘要() {
-        let app = launch(state: "chat-realtime-live"); enableChat(app); navigate("chat", "Chat", app)
+        let app = launch(state: "chat-realtime-live"); enableChat(app)
+        // 先确认聊天标签真实选中，避免丢失的导航触控掩盖前台消息回归。
+        MobileUITestNavigation.open(app, destination: "chat", title: "Chat", test: self)
         XCTAssertTrue(app.staticTexts["Sample message 60"].firstMatch.waitForExistence(timeout: 8))
-        navigate("settings", "App settings", app)
+        MobileUITestNavigation.open(app, destination: "settings", title: "App settings", test: self)
         // 等合成服务产生新消息；此时可见页面始终是设置，打开 Chat 本身不会重新加载列表。
         let delay = expectation(description: "Synthetic foreground message")
         DispatchQueue.main.asyncAfter(deadline: .now() + 17) { delay.fulfill() }
         wait(for: [delay], timeout: 20)
-        navigate("chat", "Chat", app)
+        MobileUITestNavigation.open(app, destination: "chat", title: "Chat", test: self)
         XCTAssertTrue(app.staticTexts["Sample message 61"].firstMatch.waitForExistence(timeout: 3))
         screenshot("Conversation updated while settings was visible")
     }

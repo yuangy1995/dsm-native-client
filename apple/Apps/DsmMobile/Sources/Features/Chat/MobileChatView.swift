@@ -857,6 +857,12 @@ private struct MobileChatMessagesView: View {
                     .accessibilityIdentifier("chat-search-current")
                 }
                 Menu {
+                    // 公告属于常用只读入口；大字号时原生菜单会裁剪末尾项目，优先展示以保持可达。
+                    if chat.canViewAnnouncements(for: conversation) {
+                        Button { presentsAnnouncements = true } label: { Label(L10n.string("mobile.chat.announcements.action"), systemImage: "megaphone") }
+                            .accessibilityHint(L10n.string("mobile.chat.announcements.hint"))
+                            .accessibilityIdentifier("chat-announcements-list")
+                    }
                     if let sending = chat.sending, !sending.entries.isEmpty || sending.recovery.failed {
                         Button { presentsSendRecords = true } label: { Label(L10n.string("mobile.chat.send.records"), systemImage: "paperplane") }
                             .accessibilityIdentifier("chat-send-records")
@@ -888,11 +894,6 @@ private struct MobileChatMessagesView: View {
                     if !conversation.isEncrypted, chat.timedActions?.canManageSchedules == true {
                         Button { timedList = .schedules } label: { Label(L10n.string("mobile.chat.schedule.list"), systemImage: "clock") }
                             .accessibilityIdentifier("chat-schedules-list")
-                    }
-                    if chat.canViewAnnouncements(for: conversation) {
-                        Button { presentsAnnouncements = true } label: { Label(L10n.string("mobile.chat.announcements.action"), systemImage: "megaphone") }
-                            .accessibilityHint(L10n.string("mobile.chat.announcements.hint"))
-                            .accessibilityIdentifier("chat-announcements-list")
                     }
                     if chat.canViewMembers(for: conversation) {
                         Button { presentsMembers = true } label: { Label(L10n.string("mobile.chat.members.action"), systemImage: "person.2") }

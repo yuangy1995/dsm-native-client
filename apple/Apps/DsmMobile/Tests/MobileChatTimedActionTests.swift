@@ -244,6 +244,29 @@ final class MobileChatTimedActionTests: XCTestCase {
             XCTAssertEqual(model.scheduleState, state == "chat-timed-empty" ? .empty : .error)
         }
     }
+    func test持续加载取消后结束且不产生写请求() async throws {
+        for reminder in [true, false] {
+            let transport = MobileChatTimedUITransport(state: "chat-timed-loading")
+            let model = try await make(transport)
+            let pending = Task {
+                if reminder { await model.loadReminders(in: "27") }
+                else { await model.loadSchedules(in: "27") }
+            }
+            let started = Date()
+            while await transport.counts().reads == 0 && Date().timeIntervalSince(started) < 5 {
+                await Task.yield()
+            }
+            let during = await transport.counts()
+            XCTAssertEqual(during.reads, 1)
+            XCTAssertTrue(during.writes.isEmpty)
+            if reminder { XCTAssertEqual(model.reminderState, .loading) }
+            else { XCTAssertEqual(model.scheduleState, .loading) }
+            pending.cancel()
+            await pending.value
+            let after = await transport.counts()
+            XCTAssertTrue(after.writes.isEmpty)
+        }
+    }
     func test切换会话后迟到成功不替换新会话的提醒或定时列表() async throws {
         for reminder in [true, false] {
             let transport = MobileChatTimedUITransport(state: "chat-timed-slow"); let model = try await make(transport)

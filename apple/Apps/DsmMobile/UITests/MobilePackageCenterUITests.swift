@@ -148,7 +148,20 @@ import XCTest
         reveal("mobile.nas.page.packages", app).tap()
         XCTAssertTrue(app.collectionViews["mobile.package.list"].waitForExistence(timeout: 8)); return app
     }
-    private func openSettings(_ app: XCUIApplication) { let button = app.buttons["mobile.package.settings"]; XCTAssertTrue(button.waitForExistence(timeout: 5)); button.tap(); XCTAssertTrue(app.collectionViews["mobile.package.preferences"].waitForExistence(timeout: 5)) }
+    private func openSettings(_ app: XCUIApplication) {
+        let button = app.buttons["mobile.package.settings"]
+        let preferences = app.collectionViews["mobile.package.preferences"]
+        XCTAssertTrue(button.waitForExistence(timeout: 5))
+        button.tap()
+        if !preferences.waitForExistence(timeout: 5) {
+            // 云端恢复场景出现过点击后仍停留列表；只允许补一次纯导航，不重复设置写入。
+            screenshot(app, "Package preferences first presentation")
+            if !preferences.exists && button.exists && button.isEnabled && button.isHittable {
+                button.press(forDuration: 0.15)
+            }
+        }
+        XCTAssertTrue(preferences.waitForExistence(timeout: 8))
+    }
     private func editSettings(_ app: XCUIApplication) { reveal("mobile.package.editSettings", app).tap(); XCTAssertTrue(app.collectionViews["mobile.package.settingsEditor"].waitForExistence(timeout: 5)) }
     private func openSources(_ app: XCUIApplication) { reveal("mobile.package.sources", app).tap(); XCTAssertTrue(app.collectionViews["mobile.package.source.list"].waitForExistence(timeout: 5)) }
     private func addSource(_ app: XCUIApplication) { let button = app.buttons["mobile.package.source.add"]; XCTAssertTrue(button.waitForExistence(timeout: 8)); XCTAssertTrue(button.isEnabled); button.tap(); XCTAssertTrue(app.collectionViews["mobile.package.source.editor"].waitForExistence(timeout: 5)) }

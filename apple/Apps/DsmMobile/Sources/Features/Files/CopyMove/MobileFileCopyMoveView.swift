@@ -237,11 +237,13 @@ struct MobileFileCopyMoveView: View {
                     Text(L10n.string("mobile.files.copy-move.review.message"))
                     if presentation.isBatch {
                         Text(batchSummary(presentation))
+                            .accessibilityIdentifier("files.copy-move.batch.summary")
                         ForEach(presentation.itemStates, id: \.source.path) { item in
                             LabeledContent(item.source.name, value: batchIssueMessage(item))
                         }
                     }
                 }
+                .accessibilityElement(children: .contain)
             } actions: {
                 Button(L10n.string("mobile.files.copy-move.review.dismiss")) {
                     copyMove.dismiss()

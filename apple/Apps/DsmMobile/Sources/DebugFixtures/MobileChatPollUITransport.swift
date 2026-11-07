@@ -68,7 +68,10 @@ actor MobileChatPollUITransport: DsmBinaryHTTPTransport {
         if api == DsmAPIName.chatPostVote, method == "get_choices" {
             readCount += 1
             if failReads || state == "chat-poll-load-error" { throw URLError(.notConnectedToInternet) }
-            if state == "chat-poll-loading" { try await Task.sleep(for: .seconds(30)) }
+            if state == "chat-poll-loading" {
+                // 纯加载场景不随墙上时钟变成成功结果，仍响应调用方取消。
+                while true { try await Task.sleep(for: .seconds(30)) }
+            }
             guard let id = field("post_id"), let post = posts[id], let props = post["props"] as? [String: Any],
                   let poll = props["vote"] as? [String: Any], let choices = poll["choices"] as? [[String: Any]] else { throw URLError(.badServerResponse) }
             let rows = choices.map { option -> [String: Any] in

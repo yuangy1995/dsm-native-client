@@ -200,11 +200,35 @@ import XCTest
         XCTAssertTrue(app.collectionViews["container.detail"].waitForExistence(timeout: 8))
     }
     private func openRecords(_ app: XCUIApplication) {
+        let records = element("container.records", app)
         let root = app.buttons["container.records.open"]
-        if root.exists && root.isHittable { root.tap() }
-        else { let link = app.buttons["Activity"].firstMatch; XCTAssertTrue(link.waitForExistence(timeout: 8)); link.tap() }
-        XCTAssertTrue(element("container.records", app).waitForExistence(timeout: 8))
+        let activity = app.buttons["Activity"].firstMatch
+        if root.exists && root.isHittable {
+            root.tap()
+        } else {
+            XCTAssertTrue(activity.waitForExistence(timeout: 8))
+            activity.tap()
+        }
+        if !records.waitForExistence(timeout: 8) {
+            let hierarchy = XCTAttachment(string: app.debugDescription)
+            hierarchy.name = "Container records navigation hierarchy"
+            hierarchy.lifetime = .keepAlways
+            add(hierarchy)
+            screenshot(app, "Container records navigation did not complete")
+            // 仅在真实记录页及其刷新入口均未出现、确认弹层已关闭时，恢复一次纯导航。
+            if !app.buttons["container.records.refresh"].exists &&
+                !app.collectionViews["container.confirmation"].exists &&
+                !app.collectionViews["container.selection.list"].exists {
+                if root.exists && root.isEnabled && root.isHittable {
+                    root.press(forDuration: 0.15)
+                } else if activity.exists && activity.isEnabled && activity.isHittable {
+                    activity.press(forDuration: 0.15)
+                }
+            }
+        }
+        XCTAssertTrue(records.waitForExistence(timeout: 8))
     }
+
     private func expectPhase(_ phase: String, _ app: XCUIApplication) { XCTAssertTrue(element("container.record.\(phase)", app).waitForExistence(timeout: 12)) }
     private func waitEnabled(_ value: XCUIElement) {
         let ready = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == true AND enabled == true AND hittable == true"), object: value)

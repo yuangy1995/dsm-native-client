@@ -159,11 +159,31 @@ final class MobileChatUITests: XCTestCase {
     }
 
     private func replaceText(_ field: XCUIElement, old: String, new: String) {
-        field.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.05)).tap()
-        field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: old.count) + new)
-        // 系统键盘仍在处理输入时可能先返回中间快照；等待完整目标值，不重复发送编辑。
-        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(
-            predicate: NSPredicate(format: "value == %@", new), object: field)], timeout: 5), .completed)
+        // 多行编辑框的上沿不一定是文字命中区，光标可能未移到结尾。
+        field.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5)).tap()
+        XCTAssertEqual(field.value as? String, old)
+        // 分开发送退格，避免一次批量输入时键盘仍在处理旧事件。
+        for _ in old { field.typeText(XCUIKeyboardKey.delete.rawValue) }
+        let cleared = field.value as? String ?? ""
+        XCTAssertTrue(cleared.isEmpty || cleared == field.placeholderValue, "编辑框旧文本未清空：\(cleared)")
+        field.typeText(new)
+        let updated = XCTWaiter.wait(for: [XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "value == %@", new), object: field)], timeout: 8)
+        if updated != .completed {
+            let partial = field.value as? String ?? ""
+            // 只修正确实缺少的输入后缀，不重复任何消息编辑提交。
+            if !partial.isEmpty && partial.count < new.count && new.hasPrefix(partial) {
+                field.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.5)).tap()
+                field.typeText(String(new.dropFirst(partial.count)))
+            }
+        }
+        let exact = XCTWaiter.wait(for: [XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "value == %@", new), object: field)], timeout: 6)
+        if exact != .completed {
+            let attachment = XCTAttachment(string: field.debugDescription)
+            attachment.name = "Chat edit draft did not match"; attachment.lifetime = .keepAlways; add(attachment)
+        }
+        XCTAssertEqual(exact, .completed, "编辑框未读回完整的新文本")
         XCTAssertEqual(field.value as? String, new)
     }
 
