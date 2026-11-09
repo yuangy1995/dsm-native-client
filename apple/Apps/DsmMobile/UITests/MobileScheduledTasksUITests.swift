@@ -130,10 +130,27 @@ final class MobileScheduledTasksUITests: XCTestCase {
     }
     private func openTask(_ id: String, _ app: XCUIApplication) {
         reveal("mobile.nas.task.row.\(id)", in: app).tap()
-        let ready = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
-            app.buttons["mobile.nas.task.done"].exists && !self.element("mobile.nas.task.detailLoading", app).exists
-        }, object: app)
-        XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 8), .completed)
+        func waitDetailReady() -> XCTWaiter.Result {
+            let ready = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+                app.buttons["mobile.nas.task.done"].exists && !self.element("mobile.nas.task.detailLoading", app).exists
+            }, object: app)
+            return XCTWaiter.wait(for: [ready], timeout: 8)
+        }
+        var result = waitDetailReady()
+        if result != .completed {
+            MobileUITestNavigation.capture(app, name: "Scheduled task detail first navigation", test: self)
+            // 仅当真实详情和弹层都未打开且原列表仍可用时恢复一次纯导航，不重复任何任务写入。
+            let detail = app.collectionViews["mobile.nas.task.detail"]
+            let directory = app.collectionViews["mobile.nas.task.directory"]
+            let again = element("mobile.nas.task.row.\(id)", app)
+            if !app.buttons["mobile.nas.task.done"].exists && !detail.exists &&
+                !app.sheets.firstMatch.exists && !app.alerts.firstMatch.exists &&
+                directory.exists && again.exists && again.isEnabled && again.isHittable {
+                again.tap()
+                result = waitDetailReady()
+            }
+        }
+        XCTAssertEqual(result, .completed, "任务详情必须出现完成入口且实际退出加载状态")
     }
     private func pick(_ field: String, value: String, _ app: XCUIApplication) {
         reveal("mobile.nas.task.\(field)", in: app).tap(); let item = app.buttons[value].firstMatch

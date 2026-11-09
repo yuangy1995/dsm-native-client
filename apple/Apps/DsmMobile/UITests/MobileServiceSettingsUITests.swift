@@ -59,6 +59,19 @@ final class MobileServiceSettingsUITests: XCTestCase {
     }
     func test灯光应用被拒绝后可明确继续而不重新设置亮度() {
         let app = launch("nas-services-hardware-led-denied-once", kind: "hardware"); defer { app.terminate() }
+        let hardwareList = app.collectionViews["mobile.nas.service.list"]
+        if !hardwareList.waitForExistence(timeout: 5) {
+            MobileUITestNavigation.capture(app, name: "Hardware page first navigation", test: self)
+            // 只有原硬件入口仍可操作且未呈现编辑或确认层，才补一次只读页面导航。
+            let entry = element("mobile.nas.page.hardware", app)
+            if !hardwareList.exists,
+               !app.collectionViews["mobile.nas.service.editor"].exists,
+               !app.collectionViews["mobile.nas.service.confirmation"].exists,
+               entry.exists, entry.isEnabled, entry.isHittable {
+                entry.press(forDuration: 0.15)
+            }
+        }
+        XCTAssertTrue(hardwareList.waitForExistence(timeout: 8), app.debugDescription)
         openEditor(app); increaseBrightness(app)
         app.buttons["mobile.nas.service.save"].tap()
         expect(reveal("mobile.nas.service.editorResult", in: app), contains: "permission")
@@ -110,7 +123,18 @@ final class MobileServiceSettingsUITests: XCTestCase {
         }
     }
     func test硬件未知范围保持只读且账号权限限制可见() {
-        let limited = launch("nas-services-hardware-limited", kind: "hardware"); openEditor(limited)
+        let limited = launch("nas-services-hardware-limited", kind: "hardware")
+        let hardwareList = limited.collectionViews["mobile.nas.service.list"]
+        if !hardwareList.waitForExistence(timeout: 5) {
+            MobileUITestNavigation.capture(limited, name: "Hardware page first navigation", test: self)
+            // 首次硬件入口触控后仍可能留在 NAS 设置导航；仅补一次只读页面导航。
+            let entry = element("mobile.nas.page.hardware", limited)
+            if !hardwareList.exists && entry.exists && entry.isEnabled && entry.isHittable {
+                entry.press(forDuration: 0.15)
+            }
+        }
+        XCTAssertTrue(hardwareList.waitForExistence(timeout: 8), limited.debugDescription)
+        openEditor(limited)
         XCTAssertFalse(limited.steppers["mobile.nas.hardware.brightness"].exists)
         XCTAssertTrue(limited.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "supported range")).firstMatch.waitForExistence(timeout: 5))
         XCTAssertFalse(element("mobile.nas.hardware.fan", limited).exists)
@@ -348,11 +372,37 @@ final class MobileServiceSettingsUITests: XCTestCase {
     func test中文大字内存与电源确认可取消() {
         for kind in ["zram", "powerSchedule"] {
             let app = launch("nas-services", kind: kind, chinese: true, large: true)
+            if app.frame.width > 600 {
+                // iPad 侧栏首次点击有时仅完成触控而未切换选区；只在选区未变化时补一次只读导航。
+                let page = app.buttons["mobile.nas.page.\(kind)"]
+                if !page.wait(for: \.isSelected, toEqual: true, timeout: 5) {
+                    XCTAssertTrue(page.isHittable); page.tap()
+                }
+                XCTAssertTrue(page.wait(for: \.isSelected, toEqual: true, timeout: 8))
+            }
+            XCTAssertTrue(app.collectionViews["mobile.nas.service.list"].waitForExistence(timeout: 15))
             openEditor(app)
             if kind == "zram" { reveal("mobile.nas.power.compression", in: app).switches.firstMatch.tap() }
             else { reveal("mobile.nas.power.add", in: app).tap(); screenshot(app, "Chinese large power schedule entry editor"); applyPowerEntry(app) }
             screenshot(app, "Chinese large \(kind) editor")
-            app.buttons["mobile.nas.service.save"].tap(); XCTAssertTrue(element("mobile.nas.service.confirm", app).waitForExistence(timeout: 5))
+            let save = app.buttons["mobile.nas.service.save"]
+            XCTAssertTrue(save.waitForExistence(timeout: 5))
+            XCTAssertTrue(save.isEnabled)
+            save.tap()
+            let confirm = element("mobile.nas.service.confirm", app)
+            if !confirm.waitForExistence(timeout: 5) {
+                MobileUITestNavigation.capture(app, name: "Chinese large \(kind) confirmation first presentation", test: self)
+                let editor = element("mobile.nas.service.editor", app)
+                let confirmation = element("mobile.nas.service.confirmation", app)
+                let entryEditor = element("mobile.nas.power.entryEditor", app)
+                // 保存只建立确认请求；真正写入仅在确认页的独立按钮之后执行。
+                if !confirm.exists && !confirmation.exists && !app.alerts.firstMatch.exists
+                    && !entryEditor.exists && !element("mobile.nas.service.editorResult", app).exists
+                    && editor.exists && save.exists && save.isEnabled && save.isHittable {
+                    save.press(forDuration: 0.15)
+                }
+            }
+            XCTAssertTrue(confirm.waitForExistence(timeout: 5))
             screenshot(app, "Chinese large \(kind) warning")
             element("mobile.nas.service.cancel", app).tap(); element("mobile.nas.service.done", app).tap(); waitEditorClosed(app)
             XCTAssertFalse(element("mobile.nas.service.activity.succeeded", app).exists); app.terminate()
@@ -630,14 +680,42 @@ final class MobileServiceSettingsUITests: XCTestCase {
     private func openEthernetEditor(_ app: XCUIApplication) {
         reveal("mobile.nas.ethernet.edit.eth0", in: app).tap(); XCTAssertTrue(app.buttons["mobile.nas.service.save"].waitForExistence(timeout: 5))
     }
-    private func openEditor(_ app: XCUIApplication) { reveal("mobile.nas.service.edit", in: app).tap(); XCTAssertTrue(app.buttons["mobile.nas.service.save"].waitForExistence(timeout: 5)) }
+    private func openEditor(_ app: XCUIApplication) {
+        let edit = reveal("mobile.nas.service.edit", in: app)
+        edit.tap()
+        let save = app.buttons["mobile.nas.service.save"]
+        if !save.waitForExistence(timeout: 5) {
+            MobileUITestNavigation.capture(app, name: "Service editor first presentation", test: self)
+            // 云端已出现编辑按钮收到触控但表单未打开；仅在仍停留列表时补一次无写入的导航。
+            if !app.collectionViews["mobile.nas.service.editor"].exists,
+               edit.exists && edit.isEnabled && edit.isHittable {
+                edit.press(forDuration: 0.15)
+            }
+        }
+        XCTAssertTrue(save.waitForExistence(timeout: 5))
+    }
     private func toggle(_ key: String, in app: XCUIApplication) { reveal("mobile.nas.service.\(key)", in: app).switches.firstMatch.tap() }
     private func replace(_ key: String, text: String, _ app: XCUIApplication, prefix: String = "mobile.nas.service", separateLabel: Bool = false, clearAtEnd: Bool = false) {
         let field = app.textFields["\(prefix).\(key)"]; _ = reveal("\(prefix).\(key)", in: app)
         if app.frame.width > 600 || separateLabel || clearAtEnd {
             // 独立标题的左对齐短数字框使用控件点击；iPad 行内值仍定位末尾，不依赖长按菜单。
             if separateLabel { field.tap() }
-            else { field.coordinate(withNormalizedOffset: CGVector(dx: 0.999, dy: 0.8)).tap() }
+            else if prefix == "mobile.nas.ethernet" && key == "mtu" && app.frame.width > 600 {
+                // iPad 中文大字模式的最右沿点击未获得文本焦点；先点输入框内部，再验证焦点。
+                field.tap()
+                let focus = NSPredicate(format: "hasKeyboardFocus == true")
+                if XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: focus, object: field)], timeout: 3) != .completed {
+                    MobileUITestNavigation.capture(app, name: "Ethernet MTU first focus", test: self)
+                    // 首次仅输入焦点未建立时，再点一次同一短数值框，不触发保存。
+                    if field.exists && field.isHittable {
+                        field.coordinate(withNormalizedOffset: CGVector(dx: 0.75, dy: 0.5)).tap()
+                    }
+                }
+                XCTAssertEqual(
+                    XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: focus, object: field)], timeout: 5),
+                    .completed, "MTU 输入框未获得键盘焦点"
+                )
+            } else { field.coordinate(withNormalizedOffset: CGVector(dx: 0.999, dy: 0.8)).tap() }
             let previous = field.value as? String ?? ""
             // 每次退格等待输入事件完成，避免一次发送多个退格时留下未清除的字符。
             for _ in previous { field.typeText(XCUIKeyboardKey.delete.rawValue) }
@@ -645,7 +723,42 @@ final class MobileServiceSettingsUITests: XCTestCase {
             let cleared = field.value as? String ?? ""
             XCTAssertTrue(cleared.isEmpty || cleared == field.placeholderValue, "输入框未清空：\(cleared)")
             // 保留焦点继续输入；iPad 浮动数字键盘可覆盖原输入框，再点原位置会误敲数字。
-            if !text.isEmpty { field.typeText(text) }
+            if !text.isEmpty {
+                if prefix == "mobile.nas.hardware" && key == "upsDelay" {
+                    func waitForDelayFocus() -> XCTWaiter.Result {
+                        XCTWaiter.wait(for: [XCTNSPredicateExpectation(
+                            predicate: NSPredicate(format: "hasKeyboardFocus == true"), object: field
+                        )], timeout: 5)
+                    }
+                    var focus = waitForDelayFocus()
+                    if focus != .completed {
+                        MobileUITestNavigation.capture(app, name: "UPS delay first focus", test: self)
+                        // 仅重聚焦尚未输入的数字框，绝不触发硬件设置保存。
+                        if field.exists && field.isEnabled && field.isHittable && !app.alerts.firstMatch.exists {
+                            field.tap()
+                            focus = waitForDelayFocus()
+                        }
+                    }
+                    XCTAssertEqual(focus, .completed, "UPS 等待时间输入框未取得键盘焦点")
+                    guard focus == .completed else { return }
+                    // SwiftUI 数字框每次更新模型；逐位核实已显示内容，防止连续键入时末尾数字丢失。
+                    var entered = ""
+                    for digit in text {
+                        field.typeText(String(digit))
+                        entered.append(digit)
+                        let received = XCTWaiter.wait(for: [XCTNSPredicateExpectation(
+                            predicate: NSPredicate(format: "value == %@", entered), object: field
+                        )], timeout: 5)
+                        if received != .completed {
+                            MobileUITestNavigation.capture(app, name: "UPS delay input mismatch", test: self)
+                        }
+                        XCTAssertEqual(received, .completed, "UPS 等待时间未按次序输入：\(entered)")
+                        guard received == .completed else { return }
+                    }
+                } else {
+                    field.typeText(text)
+                }
+            }
         } else {
             // LabeledContent 的辅助功能框同时包含标签和值，须点入下方实际输入区。
             field.coordinate(withNormalizedOffset: CGVector(dx: 0.85, dy: 0.8)).tap()

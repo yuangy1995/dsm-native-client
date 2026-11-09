@@ -10,14 +10,31 @@ final class MobileChatDeletionUITests: XCTestCase {
         XCTAssertTrue(author.waitForExistence(timeout: 5)); XCTAssertTrue(author.isHittable)
         author.press(forDuration: 1)
         let action = app.buttons["Delete"].firstMatch
-        XCTAssertTrue(action.waitForExistence(timeout: 5)); screenshot(app, "Single message action menu"); action.tap()
+        var menuReady = action.waitForExistence(timeout: 5)
+        if !menuReady {
+            MobileUITestNavigation.capture(app, name: "Single message context menu first presentation", test: self)
+            // 长按子元素可能选中文字；仅在没有弹层或确认、原消息可操作时恢复一次消息行长按。
+            if !app.alerts.firstMatch.exists && !app.sheets.firstMatch.exists &&
+                !app.staticTexts["Delete message?"].exists && message.exists && message.isEnabled {
+                let frame = message.frame
+                let window = app.windows.firstMatch
+                if window.exists && frame.width > 0 && frame.height > 0 && frame.midX.isFinite &&
+                    frame.midY.isFinite && window.frame.contains(CGPoint(x: frame.midX, y: frame.midY)) {
+                    message.coordinate(withNormalizedOffset: CGVector(dx: 0.75, dy: 0.12)).press(forDuration: 1)
+                    menuReady = action.waitForExistence(timeout: 5)
+                }
+            }
+        }
+        XCTAssertTrue(menuReady, "消息长按后必须出现真实删除菜单")
+        guard menuReady else { return }
+        screenshot(app, "Single message action menu"); action.tap()
         XCTAssertTrue(app.staticTexts["Delete message?"].waitForExistence(timeout: 5))
         app.buttons["Delete"].firstMatch.tap()
         let removed = NSPredicate(format: "exists == false")
         expectation(for: removed, evaluatedWith: app.staticTexts["Sample message 1"].firstMatch)
         waitForExpectations(timeout: 8)
         XCTAssertTrue(app.staticTexts["Sample message 2"].firstMatch.exists)
-        app.buttons["chat-more"].tap(); app.buttons["chat-deletion-records"].tap()
+        openRecords(app)
         let record = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "chat-deletion-record-")).firstMatch
         XCTAssertTrue(record.waitForExistence(timeout: 8)); record.tap()
         XCTAssertTrue(app.buttons["chat-deletion-remove-record"].waitForExistence(timeout: 8))
@@ -55,7 +72,7 @@ final class MobileChatDeletionUITests: XCTestCase {
         app.terminate(); app.launchEnvironment["LANSTASH_UI_STATE"] = "chat-deletion-restored"
         app.launchArguments += ["--ui-preserve-transfer-fixture"]; app.launch(); defer { app.terminate() }
         openChat(app, expectedMessage: "Sample message 2")
-        app.buttons["chat-more"].tap(); app.buttons["chat-deletion-records"].tap()
+        openRecords(app)
         let record = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "chat-deletion-record-")).firstMatch
         XCTAssertTrue(record.waitForExistence(timeout: 8)); record.tap()
         XCTAssertTrue(refresh.waitForExistence(timeout: 8)); refresh.tap()
@@ -92,8 +109,16 @@ final class MobileChatDeletionUITests: XCTestCase {
     }
 
     private func openSelection(_ app: XCUIApplication) {
-        let more = app.buttons["chat-more"]; XCTAssertTrue(more.waitForExistence(timeout: 8))
-        more.tap(); app.buttons["chat-deletion-select"].tap()
+        let selection = app.buttons["chat-deletion-select"]
+        guard MobileUITestNavigation.openMenu(app.buttons["chat-more"], showing: selection, in: app, test: self) else { return }
+        XCTAssertTrue(selection.isEnabled); selection.tap()
+        // 选择页的提交按钮在加载、空内容和错误状态下仍存在，不能把会话原页误认成目标页。
+        XCTAssertTrue(app.buttons["chat-deletion-submit"].waitForExistence(timeout: 8))
+    }
+    private func openRecords(_ app: XCUIApplication) {
+        let records = app.buttons["chat-deletion-records"]
+        guard MobileUITestNavigation.openMenu(app.buttons["chat-more"], showing: records, in: app, test: self) else { return }
+        XCTAssertTrue(records.isEnabled); records.tap()
     }
     private func selectBoth(_ app: XCUIApplication) {
         let first = app.buttons["chat-deletion-source-9001"]

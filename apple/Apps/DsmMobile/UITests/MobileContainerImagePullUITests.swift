@@ -54,7 +54,33 @@ import XCTest
     }
     func test标签失败重试空标签与筛选为空() {
         let retry = launch("containers-images-tags-error"); search(retry); openImage(retry, waitForTarget: false)
-        XCTAssertTrue(retry.buttons["Reload tags"].waitForExistence(timeout: 8)); retry.buttons["Reload tags"].tap()
+        let reload = retry.buttons["Reload tags"].firstMatch
+        var showsError = reload.waitForExistence(timeout: 8)
+        if !showsError {
+            MobileUITestNavigation.capture(retry, name: "Image tag retry page did not appear", test: self)
+            let result = element("image-pull.result.docker.io/sample/web", retry)
+            // 仅仍在原搜索结果页、且未出现标签加载或内容页面时，补一次纯导航。
+            // 不自动重新提交任何镜像下载请求，标签重试仍须由真实按钮触发。
+            if !retry.alerts.firstMatch.exists && !retry.sheets.firstMatch.exists
+                && !element("image-pull.tags-loading", retry).exists
+                && !element("image-pull.tags-empty", retry).exists
+                && !element("image-pull.target", retry).exists
+                && retry.collectionViews["image-pull.results"].exists
+                && result.exists && result.isEnabled {
+                let window = retry.windows.firstMatch
+                let frame = result.frame
+                let center = CGPoint(x: frame.midX, y: frame.midY)
+                if window.exists && !frame.isEmpty
+                    && center.x.isFinite && center.y.isFinite
+                    && window.frame.contains(center) {
+                    result.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+                    showsError = reload.waitForExistence(timeout: 8)
+                }
+            }
+        }
+        XCTAssertTrue(showsError, "标签读取失败必须实际显示重试入口")
+        guard showsError else { retry.terminate(); return }
+        reload.tap()
         XCTAssertTrue(element("image-pull.tag-picker", retry).waitForExistence(timeout: 8)); element("image-pull.tag-picker", retry).tap()
         let field = retry.searchFields.firstMatch; XCTAssertTrue(field.waitForExistence(timeout: 8)); field.tap(); field.typeText("no-match")
         XCTAssertFalse(retry.buttons["stable"].exists); screenshot("Tag filter has no matches"); retry.terminate()

@@ -54,7 +54,10 @@ actor MobilePackageUITransport: DsmHTTPTransport {
         let api = fields["api"] ?? "", method = fields["method"] ?? "", writing = ["set", "add", "delete", "start", "stop", "uninstall"].contains(method)
         if mode == "nas-package-trust-read" { throw URLError(.serverCertificateUntrusted) }
         if !writing {
-            if mode == "nas-package-loading" { try await Task.sleep(for: .seconds(30)) }
+            if mode == "nas-package-loading" {
+                // 加载场景保持同一次读取直到取消，不由云端界面查询耗时决定是否返回内容。
+                while true { try await Task.sleep(for: .seconds(30)) }
+            }
             if mode == "nas-package-retry", failedReads.insert(api).inserted { throw URLError(.notConnectedToInternet) }
             if mode == "nas-package-accepted-offline", !writes.isEmpty { throw URLError(.notConnectedToInternet) }
             if mode == "nas-package-control-read-denied", !writes.isEmpty { return denied() }

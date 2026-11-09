@@ -74,10 +74,53 @@ final class MobileChatManagementUITests: XCTestCase {
         }
     }
     private func openAnnouncements(_ app: XCUIApplication) {
-        element("chat-more", app).tap(); element("chat-announcements-list", app).tap()
+        let announcements = app.buttons["chat-announcements-list"]
+        let menu = app.buttons["chat-more"]
+        let menuReady = menu.wait(for: \.isHittable, toEqual: true, timeout: 10)
+        if !menuReady { MobileUITestNavigation.capture(app, name: "Announcements menu readiness", test: self) }
+        XCTAssertTrue(menuReady, "公告菜单入口尚未可操作")
+        guard menuReady else { return }
+        menu.tap()
+
+        // iPad 原生菜单曾返回存在且尺寸有效、却无法计算建议点击点的 AX 按钮。
+        // 公告只负责页面导航；用实际屏幕内几何位置投递触控，再由真正的公告页严格验证结果。
+        func waitForAnnouncementAction() -> XCTWaiter.Result {
+            let ready = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+                guard announcements.exists && announcements.isEnabled else { return false }
+                let frame = announcements.frame
+                let viewport = app.windows.firstMatch.frame
+                return frame.origin.x.isFinite && frame.origin.y.isFinite
+                    && frame.width.isFinite && frame.height.isFinite
+                    && frame.width > 0 && frame.height > 0
+                    && viewport.contains(CGPoint(x: frame.midX, y: frame.midY))
+            }, object: app)
+            return XCTWaiter.wait(for: [ready], timeout: 10)
+        }
+        var result = waitForAnnouncementAction()
+        if result != .completed {
+            MobileUITestNavigation.capture(app, name: "Announcements first presentation", test: self)
+            // 只在原聊天页仍存在、没有弹层且目标菜单项完全缺失时恢复一次只读展开。
+            if app.staticTexts["Sample message 1"].exists && !app.alerts.firstMatch.exists
+                && !announcements.exists && menu.exists && menu.isEnabled && menu.isHittable {
+                menu.press(forDuration: 0.15)
+                result = waitForAnnouncementAction()
+            }
+        }
+        if result != .completed { MobileUITestNavigation.capture(app, name: "Announcements menu presentation", test: self) }
+        XCTAssertEqual(result, .completed, "公告菜单项未出现在实际屏幕内")
+        guard result == .completed else { return }
+        XCTAssertTrue(announcements.isEnabled)
+        announcements.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        let page = app.navigationBars.matching(NSPredicate(format: "identifier IN %@", ["Group Announcements", "群公告"])).firstMatch
+        let appeared = page.waitForExistence(timeout: 8)
+        if !appeared { MobileUITestNavigation.capture(app, name: "Announcements presentation", test: self) }
+        XCTAssertTrue(appeared, "群公告页面尚未呈现")
     }
     private func openManagement(_ app: XCUIApplication) {
-        element("chat-more", app).tap(); element("chat-manage-conversations", app).tap()
+        let management = app.buttons["chat-manage-conversations"]
+        guard MobileUITestNavigation.openMenu(app.buttons["chat-more"], showing: management, in: app, test: self) else { return }
+        XCTAssertTrue(management.isEnabled); management.tap()
+        XCTAssertTrue(app.navigationBars["Manage conversations"].waitForExistence(timeout: 8))
     }
     private func launch(state: String = "chat-management-content", chinese: Bool = false, dark: Bool = false) -> XCUIApplication {
         continueAfterFailure = false
@@ -86,9 +129,20 @@ final class MobileChatManagementUITests: XCTestCase {
         app.launchEnvironment["LANSTASH_UI_STATE"] = state; app.launch(); return app
     }
     private func openChat(_ app: XCUIApplication, chinese: Bool = false) {
-        XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 20))
+        let folder = app.staticTexts["Sample folder"]
+        if !folder.waitForExistence(timeout: 20) {
+            MobileUITestNavigation.capture(app, name: "Chat fixture initial files", test: self)
+            // 重启后可能停在先前选中的聊天标签；只有文件入口确实可用且未选中时才回到文件页。
+            let filesTab = app.tabBars.buttons[chinese ? "文件" : "Files"]
+            let filesSidebar = app.buttons["mobile.navigation.files"]
+            if (filesTab.exists && filesTab.isEnabled && filesTab.isHittable && !filesTab.isSelected)
+                || (filesSidebar.exists && filesSidebar.isEnabled && filesSidebar.isHittable && !filesSidebar.isSelected) {
+                navigate("files", title: chinese ? "文件" : "Files", app)
+            }
+        }
+        XCTAssertTrue(folder.waitForExistence(timeout: 5), "启动后仍未出现真实的 Sample folder")
         navigate("settings", title: chinese ? "App 设置" : "App settings", app)
-        let toggle = element("mobile.settings.module.chat", app)
+        let toggle = app.switches["mobile.settings.module.chat"]
         for _ in 0..<5 { if toggle.exists && toggle.isHittable { break }; app.swipeUp() }
         XCTAssertTrue(toggle.waitForExistence(timeout: 5))
         MobileUITestNavigation.enableModule(app, module: "chat", test: self)

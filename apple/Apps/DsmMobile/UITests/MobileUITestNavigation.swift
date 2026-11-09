@@ -28,7 +28,18 @@ enum MobileUITestNavigation {
         // 开启聊天会插入通知区域；大字号下原开关会移出可见列表，先滚回原控件再读取新值。
         revealModule(toggle, in: app)
         let enabled = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", "1"), object: toggle)
-        let result = XCTWaiter.wait(for: [enabled], timeout: 10)
+        var result = XCTWaiter.wait(for: [enabled], timeout: 10)
+        if result != .completed {
+            capture(app, name: "Enable \(module) initial gesture", test: test)
+            // 首次滑动未改变本地功能开关时，先核实仍为关闭再补一次原生点击；绝不盲目反向切换。
+            revealModule(toggle, in: app)
+            if toggle.value as? String == "0", control.exists, control.isEnabled, control.isHittable {
+                control.tap()
+                // XCTest 不允许同一个 expectation 再次 wait；补点击后必须重新创建等待对象。
+                let retried = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", "1"), object: toggle)
+                result = XCTWaiter.wait(for: [retried], timeout: 10)
+            }
+        }
         if result != .completed { capture(app, name: "Enable \(module)", test: test) }
         XCTAssertEqual(result, .completed, "功能开关没有开启：\(module)", file: file, line: line)
     }
@@ -38,8 +49,26 @@ enum MobileUITestNavigation {
         let tab = app.tabBars.buttons[title]
         let sidebar = app.buttons["mobile.navigation.\(destination)"]
         let more = app.tabBars.buttons.matching(NSPredicate(format: "label IN %@", ["More", "更多"])).firstMatch
+        // 云端曾出现 AX 标签按钮存在、但缺少有效建议点击点的异常；查询 isHittable 会直接失败。
+        // 只读导航验证窗口内真实几何与启用状态，通过坐标触控后仍严格核对标签选中。
+        func canTouch(_ item: XCUIElement) -> Bool {
+            guard item.exists && item.isEnabled else { return false }
+            let frame = item.frame
+            let window = app.windows.firstMatch.frame
+            return frame.origin.x.isFinite && frame.origin.y.isFinite
+                && frame.width.isFinite && frame.height.isFinite
+                && frame.width > 0 && frame.height > 0
+                && !window.isNull && !window.isInfinite && !window.isEmpty
+                && window.contains(CGPoint(x: frame.midX, y: frame.midY))
+        }
+        func pressNavigation(_ item: XCUIElement, duration: TimeInterval) {
+            let frame = item.frame
+            app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(
+                dx: frame.midX - app.frame.minX, dy: frame.midY - app.frame.minY
+            )).press(forDuration: duration)
+        }
         let ready = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
-            (tab.exists && tab.isHittable) || (sidebar.exists && sidebar.isHittable) || (more.exists && more.isHittable)
+            canTouch(tab) || canTouch(sidebar) || canTouch(more)
         }, object: app)
         // 云端整轮查询曾耗时约十秒，可点击结果比外层超时晚三毫秒返回；须留出完整查询与再次核对的余量。
         let result = XCTWaiter.wait(for: [ready], timeout: 30)
@@ -47,14 +76,14 @@ enum MobileUITestNavigation {
         XCTAssertEqual(result, .completed, "目标导航按钮尚未可操作：\(destination)", file: file, line: line)
         guard result == .completed else { return }
         // 云端曾在一次瞬时点击后仍停留原页；使用完整按下/抬起，并检查设置页确已呈现。
-        if tab.exists && tab.isHittable {
-            tab.press(forDuration: 0.15)
+        if canTouch(tab) {
+            pressNavigation(tab, duration: 0.15)
             var selected = tab.wait(for: \.isSelected, toEqual: true, timeout: 10)
             if !selected {
                 // iPhone 标签栏也已观察到 HID 丢弃并取消触控；仅恢复一次未完成的只读导航。
                 capture(app, name: "Tab first selection to \(destination)", test: test)
-                if tab.exists && tab.isEnabled && tab.isHittable && !tab.isSelected {
-                    tab.press(forDuration: 0.15)
+                if canTouch(tab) && !tab.isSelected {
+                    pressNavigation(tab, duration: 0.15)
                 }
                 selected = tab.wait(for: \.isSelected, toEqual: true, timeout: 10)
             }
@@ -62,16 +91,16 @@ enum MobileUITestNavigation {
             XCTAssertTrue(selected, "标签栏尚未切换到目标功能：\(destination)", file: file, line: line)
             guard selected else { return }
         }
-        else if sidebar.exists && sidebar.isHittable {
+        else if canTouch(sidebar) {
             // 保留完整按下/抬起；侧栏同样检查选中状态并恢复已观察到的触控取消。
-            sidebar.press(forDuration: 0.4)
+            pressNavigation(sidebar, duration: 0.4)
             var selected = sidebar.wait(for: \.isSelected, toEqual: true, timeout: 10)
             if !selected {
                 // 云端 HID 重复登记会丢弃抬起并取消本次触控；延长按压不能补回事件。
                 // 先封存第一次未切换的证据，再至多补一次只读导航；不用于任何业务提交。
                 capture(app, name: "Sidebar first selection to \(destination)", test: test)
-                if sidebar.exists && sidebar.isEnabled && sidebar.isHittable && !sidebar.isSelected {
-                    sidebar.press(forDuration: 0.4)
+                if canTouch(sidebar) && !sidebar.isSelected {
+                    pressNavigation(sidebar, duration: 0.4)
                 }
                 selected = sidebar.wait(for: \.isSelected, toEqual: true, timeout: 10)
             }
@@ -80,10 +109,17 @@ enum MobileUITestNavigation {
             guard selected else { return }
         }
         else {
-            XCTAssertTrue(more.exists, file: file, line: line); XCTAssertTrue(more.isHittable, file: file, line: line); more.tap()
+            XCTAssertTrue(more.exists, file: file, line: line)
+            let available = canTouch(more)
+            XCTAssertTrue(available, "更多导航入口未在窗口内启用", file: file, line: line)
+            guard available else { return }
+            pressNavigation(more, duration: 0.15)
             let item = app.staticTexts[title].firstMatch
             XCTAssertTrue(item.waitForExistence(timeout: 10), file: file, line: line)
-            XCTAssertTrue(item.isHittable, file: file, line: line); item.tap()
+            let itemReady = canTouch(item)
+            XCTAssertTrue(itemReady, "更多菜单中的目标尚未在窗口内启用", file: file, line: line)
+            guard itemReady else { return }
+            pressNavigation(item, duration: 0.15)
         }
         if destination == "settings" {
             let page = app.collectionViews["mobile.settings.page"]
@@ -91,6 +127,42 @@ enum MobileUITestNavigation {
             if !appeared { capture(app, name: "Settings presentation", test: test) }
             XCTAssertTrue(appeared, "设置页尚未呈现", file: file, line: line)
         }
+    }
+
+    /// 菜单展开是独立的只读导航步骤；等实际菜单项出现后才允许调用方继续操作。
+    @discardableResult
+    static func openMenu(_ menu: XCUIElement, showing item: XCUIElement, in app: XCUIApplication,
+                         test: XCTestCase, file: StaticString = #filePath, line: UInt = #line) -> Bool {
+        let ready = menu.wait(for: \.isHittable, toEqual: true, timeout: 10)
+        if !ready { capture(app, name: "Menu readiness", test: test) }
+        XCTAssertTrue(ready, "菜单入口尚未可操作", file: file, line: line)
+        guard ready else { return false }
+        menu.tap()
+        // 系统菜单已暴露标识时仍可能返回无限坐标或零尺寸；此时不能提交点击。
+        func waitForItem() -> XCTWaiter.Result {
+            // 每次等待都创建新 expectation，不能复用已经完成或超时的实例。
+            let itemReady = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+                guard item.exists else { return false }
+                let frame = item.frame
+                return frame.origin.x.isFinite && frame.origin.y.isFinite
+                    && frame.width.isFinite && frame.height.isFinite && frame.width > 0 && frame.height > 0
+                    && item.isHittable
+            }, object: item)
+            return XCTWaiter.wait(for: [itemReady], timeout: 10)
+        }
+        var result = waitForItem()
+        if result != .completed {
+            capture(app, name: "Menu first presentation", test: test)
+            // 只有文件页仍在原位、菜单目标完全不存在且没有弹层时，才恢复一次只读展开。
+            if app.staticTexts["Sample folder"].exists && !item.exists && !app.alerts.firstMatch.exists
+                && menu.exists && menu.isEnabled && menu.isHittable {
+                menu.press(forDuration: 0.15)
+                result = waitForItem()
+            }
+        }
+        if result != .completed { capture(app, name: "Menu presentation", test: test) }
+        XCTAssertEqual(result, .completed, "菜单项尚未完成布局或不可操作", file: file, line: line)
+        return result == .completed
     }
 
     static func capture(_ app: XCUIApplication, name: String, test: XCTestCase) {
@@ -103,7 +175,10 @@ enum MobileUITestNavigation {
     private static func revealModule(_ toggle: XCUIElement, in app: XCUIApplication) {
         let settings = app.collectionViews["mobile.settings.page"]
         for _ in 0..<8 {
-            if toggle.exists && toggle.isHittable { return }
+            // 外层 SwiftUI 开关行可命中，并不代表其中接收触控的原生 Switch 已在屏幕内。
+            // 须同时核对实际控件，避免在不可操作的子控件上耗尽 XCTest 查询时间。
+            let control = toggle.switches.firstMatch
+            if toggle.exists && toggle.isHittable && control.exists && control.isHittable { return }
             settings.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.8)).press(forDuration: 0.1,
                 thenDragTo: settings.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.3)),
                 withVelocity: .slow, thenHoldForDuration: 0.2)

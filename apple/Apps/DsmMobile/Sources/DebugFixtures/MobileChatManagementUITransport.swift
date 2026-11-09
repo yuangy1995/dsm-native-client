@@ -71,7 +71,10 @@ actor MobileChatManagementUITransport: DsmBinaryHTTPTransport {
         if pinSearch || (api == DsmAPIName.chatPost && method == "list") {
             reads += 1
             if failReads || (pinSearch && state == "chat-management-error") { throw URLError(.notConnectedToInternet) }
-            if pinSearch && state == "chat-management-loading" { try await Task.sleep(for: .seconds(30)) }
+            if pinSearch && state == "chat-management-loading" {
+                // 只挂起公告读取；关闭页面取消任务后立即结束，不影响消息列表或写入场景。
+                while true { try await Task.sleep(for: .seconds(30)) }
+            }
             let values = (9001...(pinCount > 1 ? 9112 : 9002)).map { post(String($0)) }
             if pinSearch {
                 let pins = values.filter { snapshot.pinned[$0["post_id"] as? String ?? ""] != nil }

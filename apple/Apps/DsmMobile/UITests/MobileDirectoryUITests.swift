@@ -168,14 +168,23 @@ final class MobileDirectoryUITests: XCTestCase {
             XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: suggestion)], timeout: 5), .completed)
             field.tap()
         }
-        let previous = (field.value as? String)?.count ?? 0
+        let current = field.value as? String ?? ""
+        let previous = current == field.placeholderValue ? 0 : current.count
         if previous > 0 {
-            field.coordinate(withNormalizedOffset: CGVector(dx: 0.98, dy: 0.8)).tap()
+            // 已观察到删除后再次点按会丢失键盘焦点；在末尾定位、清空并留在当前输入框。
+            field.coordinate(withNormalizedOffset: CGVector(dx: 0.93, dy: 0.5)).tap()
             field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: previous))
-            field.tap()
+            let cleared = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+                let value = field.value as? String ?? ""
+                return value.isEmpty || value == field.placeholderValue
+            }, object: field)
+            XCTAssertEqual(XCTWaiter.wait(for: [cleared], timeout: 6), .completed, "密码输入框未清空")
         }
         field.typeText(text)
-        field.typeText("\n")
+        let entered = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            (field.value as? String)?.count == text.count
+        }, object: field)
+        XCTAssertEqual(XCTWaiter.wait(for: [entered], timeout: 6), .completed, "密码输入尚未完成")
     }
     private func replaceDescription(_ app: XCUIApplication) {
         let field = reveal("mobile.nas.directory.description", in: app)

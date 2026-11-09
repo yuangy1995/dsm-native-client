@@ -83,7 +83,22 @@ import XCTest
         let button = app.buttons["virtual-machine.console.open"]
         XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate(format: "enabled == true AND hittable == true"), object: button)], timeout: 10), .completed)
         button.tap()
-        XCTAssertTrue(app.buttons["virtual-machine.console.close"].waitForExistence(timeout: 8))
+        let close = app.buttons["virtual-machine.console.close"]
+        if !close.waitForExistence(timeout: 8) {
+            MobileUITestNavigation.capture(app, name: "Virtual machine console did not open", test: self)
+            let preparing = element("virtual-machine.console.preparing", app)
+            let preparationError = element("virtual-machine.console.preparation-error", app)
+            let reconnect = app.buttons["virtual-machine.console.reconnect"]
+            let consoleContent = app.webViews.firstMatch
+            // 只有确认控制台从未呈现、原入口仍可用时，恢复一次纯导航触控。
+            // 不重复发送控制台输入，也不重复任何虚拟机业务写入。
+            if !close.exists && !preparing.exists && !preparationError.exists &&
+                !reconnect.exists && !consoleContent.exists &&
+                button.exists && button.isEnabled && button.isHittable {
+                button.tap()
+            }
+        }
+        XCTAssertTrue(close.waitForExistence(timeout: 8), app.debugDescription)
     }
     private func element(_ id: String, _ app: XCUIApplication) -> XCUIElement { app.descendants(matching: .any).matching(identifier: id).firstMatch }
     private func screenshot(_ name: String) { let attachment = XCTAttachment(screenshot: XCUIApplication().screenshot()); attachment.name = name; attachment.lifetime = .keepAlways; add(attachment) }

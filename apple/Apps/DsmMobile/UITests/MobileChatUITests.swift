@@ -70,7 +70,27 @@ final class MobileChatUITests: XCTestCase {
         XCTAssertTrue(result.waitForExistence(timeout: 8)); result.tap()
         XCTAssertTrue(app.staticTexts["Earlier reply"].waitForExistence(timeout: 8))
         let reply = element("chat-reply-text", app)
-        reply.tap(); reply.typeText("New sample reply")
+        XCTAssertTrue(reply.waitForExistence(timeout: 8))
+        XCTAssertTrue(reply.wait(for: \.isHittable, toEqual: true, timeout: 8))
+        reply.tap()
+        func waitForFocus() -> XCTWaiter.Result {
+            XCTWaiter.wait(for: [XCTNSPredicateExpectation(
+                predicate: NSPredicate(format: "hasKeyboardFocus == true"), object: reply)], timeout: 5)
+        }
+        var focus = waitForFocus()
+        if focus != .completed {
+            MobileUITestNavigation.capture(app, name: "Chat reply did not receive keyboard focus", test: self)
+            // 没有发送消息时才允许对原输入框恢复一次纯聚焦，不重复回复发送。
+            if reply.exists && reply.isEnabled && reply.isHittable && !app.alerts.firstMatch.exists {
+                reply.press(forDuration: 0.15)
+                focus = waitForFocus()
+            }
+        }
+        XCTAssertEqual(focus, .completed, "线程回复框必须实际获得键盘焦点")
+        guard focus == .completed else { return }
+        reply.typeText("New sample reply")
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "value == %@", "New sample reply"), object: reply)], timeout: 5), .completed)
         element("chat-reply-send", app).tap()
         XCTAssertTrue(app.staticTexts["New sample reply"].waitForExistence(timeout: 8))
         XCTAssertFalse(element("chat-reply-send", app).isEnabled)
@@ -159,11 +179,31 @@ final class MobileChatUITests: XCTestCase {
     }
 
     private func replaceText(_ field: XCUIElement, old: String, new: String) {
-        field.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.05)).tap()
-        field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: old.count) + new)
-        // 系统键盘仍在处理输入时可能先返回中间快照；等待完整目标值，不重复发送编辑。
-        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(
-            predicate: NSPredicate(format: "value == %@", new), object: field)], timeout: 5), .completed)
+        // 多行编辑框的上沿不一定是文字命中区，光标可能未移到结尾。
+        field.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5)).tap()
+        XCTAssertEqual(field.value as? String, old)
+        // 分开发送退格，避免一次批量输入时键盘仍在处理旧事件。
+        for _ in old { field.typeText(XCUIKeyboardKey.delete.rawValue) }
+        let cleared = field.value as? String ?? ""
+        XCTAssertTrue(cleared.isEmpty || cleared == field.placeholderValue, "编辑框旧文本未清空：\(cleared)")
+        field.typeText(new)
+        let updated = XCTWaiter.wait(for: [XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "value == %@", new), object: field)], timeout: 8)
+        if updated != .completed {
+            let partial = field.value as? String ?? ""
+            // 只修正确实缺少的输入后缀，不重复任何消息编辑提交。
+            if !partial.isEmpty && partial.count < new.count && new.hasPrefix(partial) {
+                field.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.5)).tap()
+                field.typeText(String(new.dropFirst(partial.count)))
+            }
+        }
+        let exact = XCTWaiter.wait(for: [XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "value == %@", new), object: field)], timeout: 6)
+        if exact != .completed {
+            let attachment = XCTAttachment(string: field.debugDescription)
+            attachment.name = "Chat edit draft did not match"; attachment.lifetime = .keepAlways; add(attachment)
+        }
+        XCTAssertEqual(exact, .completed, "编辑框未读回完整的新文本")
         XCTAssertEqual(field.value as? String, new)
     }
 

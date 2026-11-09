@@ -241,11 +241,15 @@ private struct MobileNasDiskView: View {
                         } else {
                             ForEach(NasDiskTestAction.allCases, id: \.self) { action in
                                 if let change = model.request(action, diskID: diskID) {
-                                    Button(action.title, role: action == .stop ? .destructive : nil) {
+                                    // 为实体按钮提供完整可触控区域，避免小型标题在滚动表单中产生无效触点。
+                                    Button(role: action == .stop ? .destructive : nil) {
                                         confirmation = change; confirmationActivation = model.activation
+                                    } label: {
+                                        Text(action.title)
+                                            .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                                            .contentShape(Rectangle())
                                     }
                                     .buttonStyle(.bordered)
-                                    .frame(minHeight: 44)
                                     .accessibilityIdentifier("mobile.nas.disk.\(action.rawValue)")
                                 }
                             }

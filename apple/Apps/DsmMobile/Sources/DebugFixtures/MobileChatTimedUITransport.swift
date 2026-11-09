@@ -48,7 +48,10 @@ actor MobileChatTimedUITransport: DsmBinaryHTTPTransport {
         if method == "list" {
             reads += 1
             if failReads || state == "chat-timed-load-error" { throw URLError(.notConnectedToInternet) }
-            if state == "chat-timed-loading" { try await Task.sleep(for: .seconds(30)) }
+            if state == "chat-timed-loading" {
+                // 纯加载用例在页面关闭前不能自行变成成功；每轮休眠保持任务取消可立即终止。
+                while true { try await Task.sleep(for: .seconds(30)) }
+            }
             if reminder {
                 let values = field("channel_id") == "27" ? snapshot.reminders.map { ["post_id": $0.messageID, "reminder_id": $0.id, "remind_at": Int64($0.remindAt.timeIntervalSince1970 * 1_000)] as [String: Any] } : []
                 return try response(["reminders": duplicates ? values + values : values])

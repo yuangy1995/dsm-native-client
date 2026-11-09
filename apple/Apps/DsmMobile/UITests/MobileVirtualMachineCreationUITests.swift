@@ -9,7 +9,15 @@ import XCTest
         XCTAssertEqual(app.textFields["virtual-machine.creation.memory"].label, "Memory (MiB)")
         replace("memory", "768", app); screenshot("Virtual machine creation exact memory and disk")
         next(app); screenshot("Virtual machine creation disconnected network and startup options")
-        next(app); XCTAssertTrue(app.staticTexts["virtual-machine.creation.risk"].isHittable)
+        next(app)
+        let risk = app.staticTexts["virtual-machine.creation.risk"]
+        if !risk.isHittable {
+            failureEvidence()
+            // 切换到摘要后列表可能保留旧视口；只滚回页首，不重放任何创建写入。
+            let form = app.collectionViews["virtual-machine.creation.form"]
+            if form.exists, form.isHittable, !app.alerts.firstMatch.exists { form.swipeDown() }
+        }
+        XCTAssertTrue(risk.isHittable)
         screenshot("Virtual machine creation final configuration and storage effect")
         let submit = app.buttons["virtual-machine.creation.submit"]; waitEnabled(submit); submit.tap()
         XCTAssertTrue(app.collectionViews["virtual-machine.creation.form"].waitForNonExistence(timeout: 15))
@@ -105,8 +113,14 @@ import XCTest
         field.coordinate(withNormalizedOffset: CGVector(dx: 0.999, dy: 0.8)).tap()
         let previous = field.value as? String ?? "", placeholder = field.placeholderValue ?? ""
         if previous != placeholder { field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: previous.count)) }
-        let empty = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@ OR value == %@", "", placeholder), object: field)
-        XCTAssertEqual(XCTWaiter.wait(for: [empty], timeout: 6), .completed)
+        // SwiftUI 空输入的辅助功能值可以是 nil；仍然拒绝任何残留文字或数字。
+        let empty = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            let current = field.value as? String ?? ""
+            return current.isEmpty || current == placeholder
+        }, object: field)
+        let cleared = XCTWaiter.wait(for: [empty], timeout: 6)
+        if cleared != .completed { failureEvidence() }
+        XCTAssertEqual(cleared, .completed)
         field.typeText(text)
         XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", text), object: field)], timeout: 6), .completed)
         if app.frame.width > 600, app.popovers.firstMatch.exists {

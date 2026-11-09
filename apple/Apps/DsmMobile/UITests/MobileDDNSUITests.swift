@@ -72,7 +72,16 @@ final class MobileDDNSUITests: XCTestCase {
             let app = launch(state)
             switch state {
             case "nas-ddns-empty":
-                XCTAssertTrue(app.staticTexts["No Domain Records"].waitForExistence(timeout: 8))
+                let empty = app.staticTexts["No Domain Records"]
+                if !empty.waitForExistence(timeout: 8) {
+                    // iPad 侧栏首次点按可能未切换详情；只在原入口仍未选中时补一次只读导航。
+                    MobileUITestNavigation.capture(app, name: "DDNS empty initial navigation", test: self)
+                    let destination = element("mobile.nas.page.ddns", app)
+                    if destination.exists && destination.isEnabled && destination.isHittable && !destination.isSelected {
+                        destination.tap()
+                    }
+                }
+                XCTAssertTrue(empty.waitForExistence(timeout: 8))
                 XCTAssertTrue(element("mobile.nas.ddns.add", app).isEnabled)
             case "nas-ddns-loading":
                 XCTAssertTrue(app.staticTexts["Loading domain records…"].waitForExistence(timeout: 8))
@@ -125,7 +134,27 @@ final class MobileDDNSUITests: XCTestCase {
         let host = app.textFields["mobile.nas.ddns.hostname"]
         XCTAssertTrue(host.waitForExistence(timeout: 5)); host.tap(); host.typeText("created.example.invalid\n")
         let username = app.textFields["mobile.nas.ddns.username"]
-        username.tap(); username.typeText("synthetic-user\n")
+        XCTAssertTrue(username.waitForExistence(timeout: 5))
+        username.tap()
+        func waitForUsernameFocus() -> XCTWaiter.Result {
+            XCTWaiter.wait(for: [XCTNSPredicateExpectation(
+                predicate: NSPredicate(format: "hasKeyboardFocus == true"), object: username
+            )], timeout: 5)
+        }
+        var focus = waitForUsernameFocus()
+        if focus != .completed {
+            MobileUITestNavigation.capture(app, name: "DDNS username first focus", test: self)
+            // 账号尚未输入，且没有弹层时，只恢复一次原字段聚焦，不重做保存。
+            if username.exists && username.isEnabled && username.isHittable
+                && !app.alerts.firstMatch.exists && !app.sheets.firstMatch.exists {
+                username.tap()
+                focus = waitForUsernameFocus()
+            }
+        }
+        XCTAssertEqual(focus, .completed, "DDNS 账号输入框未取得键盘焦点")
+        guard focus == .completed else { return }
+        username.typeText("synthetic-user\n")
+        XCTAssertEqual(username.value as? String, "synthetic-user")
         let password = app.secureTextFields["mobile.nas.ddns.password"]
         password.tap(); password.typeText("synthetic-only\n")
     }
@@ -143,7 +172,19 @@ final class MobileDDNSUITests: XCTestCase {
     }
     private func openRecord(_ app: XCUIApplication) {
         let record = element("mobile.nas.ddns.record.Example", app)
-        XCTAssertTrue(record.waitForExistence(timeout: 8)); record.tap()
+        if !record.waitForExistence(timeout: 8) {
+            MobileUITestNavigation.capture(app, name: "DDNS record initial navigation", test: self)
+            let destination = element("mobile.nas.page.ddns", app)
+            let navigation = element("mobile.nas.navigation", app)
+            let add = element("mobile.nas.ddns.add", app)
+            // 仅在仍处于 NAS 侧栏且未选中 DDNS 时恢复一次只读导航；不可重试编辑或保存。
+            if navigation.exists && !add.exists && !app.alerts.firstMatch.exists &&
+                destination.exists && destination.isEnabled && destination.isHittable && !destination.isSelected {
+                destination.press(forDuration: 0.15)
+            }
+        }
+        XCTAssertTrue(record.waitForExistence(timeout: 8))
+        record.tap()
     }
     private func launch(_ state: String, preserve: Bool = false, chinese: Bool = false, large: Bool = false) -> XCUIApplication {
         continueAfterFailure = false; XCUIDevice.shared.orientation = .portrait

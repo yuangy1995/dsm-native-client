@@ -33,6 +33,7 @@ struct MobileVFSCloudView: View {
                         else { TextField(L10n.string("files.vfs.alias"), text: $alias) }
                     } else {
                         Text(L10n.string("files.vfs.cloudAuthorizationDetail")).foregroundStyle(.secondary)
+                            .accessibilityIdentifier("files.remote.cloud.authorization.detail")
                         Button(L10n.string("files.vfs.authorizeCloud")) { Task { await begin() } }
                             .disabled(!model.canManageVFS).accessibilityIdentifier("files.remote.cloud.start")
                     }

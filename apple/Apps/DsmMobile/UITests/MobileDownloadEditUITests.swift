@@ -87,8 +87,26 @@ final class MobileDownloadEditUITests: XCTestCase {
     }
     private func openBatch(_ app: XCUIApplication) {
         toolbar("downloads.select", labels: ["Select tasks", "选择任务"], app)
-        let all = button("downloads.select-all", app); XCTAssertTrue(all.waitForExistence(timeout: 8)); all.tap()
-        button("downloads.batch.edit", app).tap()
+        let all = button("downloads.select-all", app)
+        if !all.waitForExistence(timeout: 8) {
+            MobileUITestNavigation.capture(app, name: "Downloads selection first presentation", test: self)
+            // 多选只改变当前页面模式；首次导航未生效且入口仍在时才补一次，不重提任何任务编辑。
+            let opener = button("downloads.select", app)
+            if opener.exists && opener.isEnabled && opener.isHittable && !all.exists { opener.tap() }
+        }
+        XCTAssertTrue(all.waitForExistence(timeout: 8)); XCTAssertTrue(all.isHittable); all.tap()
+        let edit = button("downloads.batch.edit", app)
+        XCTAssertTrue(edit.waitForExistence(timeout: 8)); edit.tap()
+        let destination = element("downloads.edit.destination", app)
+        if !destination.waitForExistence(timeout: 8) {
+            MobileUITestNavigation.capture(app, name: "Download edit form first navigation", test: self)
+            // 尚未保存任何目录写入；只有仍在任务多选页、原编辑入口可操作时恢复一次纯导航。
+            if !destination.exists && !app.alerts.firstMatch.exists &&
+                edit.exists && edit.isEnabled && edit.isHittable {
+                edit.press(forDuration: 0.15)
+            }
+        }
+        XCTAssertTrue(destination.waitForExistence(timeout: 8), "批量修改目录表单尚未实际呈现")
     }
     private func openRecord(_ app: XCUIApplication) {
         toolbar("downloads.records", labels: ["Recent actions", "最近操作"], app)
